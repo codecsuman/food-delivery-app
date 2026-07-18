@@ -1,0 +1,1 @@
+{"version":3,"file":"email.d.ts","sourceRoot":"","sources":["../../mailtrap/email.ts"],"names":[],"mappings":"AAQA,eAAO,MAAM,qBAAqB,GAChC,OAAO,MAAM,EACb,mBAAmB,MAAM,kBAoB1B,CAAC;AAEF,eAAO,MAAM,gBAAgB,GAAU,OAAO,MAAM,EAAE,MAAM,MAAM,kBAuBjE,CAAC;AAEF,eAAO,MAAM,sBAAsB,GACjC,OAAO,MAAM,EACb,UAAU,MAAM,kBAqBjB,CAAC;AAEF,eAAO,MAAM,qBAAqB,GAAU,OAAO,MAAM,kBAoBxD,CAAC"}

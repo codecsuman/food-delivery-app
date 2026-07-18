@@ -20,7 +20,8 @@ export type OrderStatus =
   | "confirmed"
   | "preparing"
   | "outfordelivery"
-  | "delivered";
+  | "delivered"
+  | "payment_failed";
 
 export interface IOrder extends Document {
   user: mongoose.Schema.Types.ObjectId;
@@ -29,7 +30,7 @@ export interface IOrder extends Document {
   cartItems: CartItems[];
   totalAmount: number;
   status: OrderStatus;
-  paymentIntentId?: string; // Stripe payment tracking
+  paymentIntentId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -96,6 +97,7 @@ const orderSchema = new mongoose.Schema<IOrder>(
           "preparing",
           "outfordelivery",
           "delivered",
+          "payment_failed",
         ],
         message: "Status {VALUE} is not valid",
       },
@@ -110,11 +112,10 @@ const orderSchema = new mongoose.Schema<IOrder>(
   { timestamps: true },
 );
 
-// Indexes for faster queries
-orderSchema.index({ user: 1 }); // Get all orders for a user
-orderSchema.index({ restaurant: 1 }); // Get all orders for a restaurant
-orderSchema.index({ status: 1 }); // Filter by status
-orderSchema.index({ createdAt: -1 }); // Sort by newest first
-orderSchema.index({ user: 1, status: 1 }); // Combined: user's orders by status
+orderSchema.index({ user: 1 });
+orderSchema.index({ restaurant: 1 });
+orderSchema.index({ status: 1 });
+orderSchema.index({ createdAt: -1 });
+orderSchema.index({ user: 1, status: 1 });
 
 export const Order = mongoose.model<IOrder>("Order", orderSchema);

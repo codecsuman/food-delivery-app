@@ -7,9 +7,9 @@ import {
   searchRestaurant,
   updateOrderStatus,
   updateRestaurant,
-} from "../controller/restaurant.controller.ts";
-import upload from "../middlewares/multer.ts";
-import { isAuthenticated } from "../middlewares/isAuthenticated.ts";
+} from "../controller/restaurant.controller.js";
+import upload from "../middlewares/multer.js";
+import { isAuthenticated } from "../middlewares/isAuthenticated.js";
 
 const router = express.Router();
 
@@ -28,9 +28,9 @@ router.get("/order", isAuthenticated, getRestaurantOrder);
 // Update order status (any logged-in user)
 router.put("/order/:orderId/status", isAuthenticated, updateOrderStatus);
 
-// Search restaurants (public) - FIXED: Also support query-based search
+// Search restaurants (public)
 router.get("/search/:searchText", searchRestaurant);
-// FIXED: Additional route for query-only search (from hero section)
+// Additional route for query-only search (from hero section)
 router.get("/search", searchRestaurant);
 
 // Get single restaurant (public)

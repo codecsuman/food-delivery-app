@@ -1,18 +1,18 @@
 import { Request, Response } from "express";
-import { User } from "../models/user.model.ts";
+import { User } from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import {
   uploadImage,
   deleteImage,
   getPublicIdFromUrl,
-} from "../utils/cloudinary.ts";
-import { generateToken, clearToken } from "../utils/generateToken.ts";
+} from "../utils/cloudinary.js";
+import { generateToken, clearToken } from "../utils/generateToken.js";
 import {
   sendPasswordResetEmail,
   sendResetSuccessEmail,
   sendWelcomeEmail,
-} from "../mailtrap/email.ts";
+} from "../mailtrap/email.js";
 
 // ======================= SIGNUP =======================
 export const signup = async (req: Request, res: Response) => {
@@ -51,7 +51,6 @@ export const signup = async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // FIXED: Everyone is admin by default - no secret key needed
     user = await User.create({
       fullname,
       email,
@@ -63,7 +62,6 @@ export const signup = async (req: Request, res: Response) => {
 
     generateToken(res, user);
 
-    // Welcome email is best-effort only
     try {
       await sendWelcomeEmail(email, fullname);
     } catch (emailError) {
@@ -314,7 +312,7 @@ export const checkAuth = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= GET PROFILE (NEW - for refreshUser) =======================
+// ======================= GET PROFILE =======================
 export const getProfile = async (req: Request, res: Response) => {
   try {
     const userId = req.id;
@@ -355,7 +353,6 @@ export const updateProfile = async (req: Request, res: Response) => {
       });
     }
 
-    // Check email uniqueness if changing email
     if (email && email !== user.email) {
       const existingUser = await User.findOne({ email });
       if (existingUser) {
@@ -366,7 +363,6 @@ export const updateProfile = async (req: Request, res: Response) => {
       }
     }
 
-    // Build update object
     const updateData: any = {};
 
     if (fullname !== undefined) updateData.fullname = fullname.trim();
@@ -377,7 +373,6 @@ export const updateProfile = async (req: Request, res: Response) => {
     if (city !== undefined) updateData.city = city.trim();
     if (country !== undefined) updateData.country = country.trim();
 
-    // Handle profile picture upload
     if (profilePicture && typeof profilePicture === "string") {
       const isDataUri = profilePicture.startsWith("data:image/");
       const isUrl = /^https?:\/\//.test(profilePicture);
@@ -389,7 +384,6 @@ export const updateProfile = async (req: Request, res: Response) => {
         });
       }
 
-      // Delete old image from Cloudinary if exists
       if (user.profilePicture) {
         const oldPublicId = getPublicIdFromUrl(user.profilePicture);
         if (oldPublicId) {
@@ -397,7 +391,6 @@ export const updateProfile = async (req: Request, res: Response) => {
         }
       }
 
-      // Upload new image
       const cloudResponse = await uploadImage(
         profilePicture,
         "suman-food/avatars",

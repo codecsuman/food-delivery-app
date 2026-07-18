@@ -28,13 +28,13 @@ console.log(
 import express, { Request, Response } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import connectDB from "./db/connectDB.ts";
-import userRoute from "./routes/user.route.ts";
-import restaurantRoute from "./routes/restaurant.route.ts";
-import menuRoute from "./routes/menu.route.ts";
-import orderRoute from "./routes/order.route.ts";
+import connectDB from "./db/connectDB.js";
+import userRoute from "./routes/user.route.js";
+import restaurantRoute from "./routes/restaurant.route.js";
+import menuRoute from "./routes/menu.route.js";
+import orderRoute from "./routes/order.route.js";
 import bodyParser from "body-parser";
-import { stripeWebhook } from "./controller/order.controller.ts"; // FIXED: controller (singular), not controllers
+import { stripeWebhook } from "./controller/order.controller.js";
 
 const app = express();
 const PORT = process.env.PORT || 8001;
@@ -55,7 +55,7 @@ app.use(
 app.post(
   "/api/v1/order/webhook",
   bodyParser.raw({ type: "application/json" }),
-  stripeWebhook, // FIXED: Actually call the controller function!
+  stripeWebhook,
 );
 
 // =========================
@@ -68,7 +68,6 @@ app.use(cookieParser());
 // =========================
 // STATIC FILES
 // =========================
-// FIXED: Removed duplicate path import - already imported at top
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // =========================
@@ -108,7 +107,6 @@ const startServer = async () => {
       console.log(`✅ Server running on port ${PORT}`);
     });
 
-    // Graceful shutdown
     const gracefulShutdown = (signal: string) => {
       console.log(`\n${signal} received. Shutting down gracefully...`);
       server.close(() => {

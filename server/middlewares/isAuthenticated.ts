@@ -5,8 +5,8 @@ declare global {
   namespace Express {
     interface Request {
       id: string;
-      admin: boolean; // Added for role-based access
-      email: string; // Added for convenience
+      admin: boolean;
+      email: string;
     }
   }
 }
@@ -38,7 +38,6 @@ export const isAuthenticated = async (
     try {
       decoded = jwt.verify(token, process.env.SECRET_KEY) as jwt.JwtPayload;
     } catch (jwtError: any) {
-      // Token expired
       if (jwtError.name === "TokenExpiredError") {
         res.clearCookie("token");
         return res.status(401).json({
@@ -47,7 +46,6 @@ export const isAuthenticated = async (
         });
       }
 
-      // Invalid token
       return res.status(401).json({
         success: false,
         message: "Invalid token. Please login again.",
@@ -61,7 +59,6 @@ export const isAuthenticated = async (
       });
     }
 
-    // Attach user data to request
     req.id = decoded.userId as string;
     req.admin = (decoded.admin as boolean) || false;
     req.email = (decoded.email as string) || "";

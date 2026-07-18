@@ -1,13 +1,13 @@
 import express from "express";
-import upload from "../middlewares/multer.ts";
-import { isAuthenticated } from "../middlewares/isAuthenticated.ts";
+import upload from "../middlewares/multer.js";
+import { isAuthenticated } from "../middlewares/isAuthenticated.js";
 import {
   addMenu,
   editMenu,
   deleteMenu,
   getMenuByRestaurant,
   getAllMenus,
-} from "../controller/menu.controller.ts";
+} from "../controller/menu.controller.js";
 
 const router = express.Router();
 

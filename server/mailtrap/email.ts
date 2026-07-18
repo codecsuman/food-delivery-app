@@ -3,8 +3,8 @@ import {
   generateResetSuccessEmailHtml,
   generateVerificationEmailHtml,
   generateWelcomeEmailHtml,
-} from "./htmlEmail.ts";
-import { client, sender } from "./mailtrap.ts";
+} from "./htmlEmail.js";
+import { client, sender } from "./mailtrap.js";
 
 export const sendVerificationEmail = async (
   email: string,
@@ -27,7 +27,6 @@ export const sendVerificationEmail = async (
     console.log(`✅ Verification email sent to ${email}`);
   } catch (error) {
     console.error("❌ Failed to send verification email:", error);
-    // Don't throw — email failure shouldn't break auth flow
   }
 };
 
@@ -53,7 +52,6 @@ export const sendWelcomeEmail = async (email: string, name: string) => {
     console.log(`✅ Welcome email sent to ${email}`);
   } catch (error) {
     console.error("❌ Failed to send welcome email:", error);
-    // Don't throw
   }
 };
 
@@ -79,7 +77,6 @@ export const sendPasswordResetEmail = async (
     console.log(`✅ Password reset email sent to ${email}`);
   } catch (error) {
     console.error("❌ Failed to send password reset email:", error);
-    // Don't throw
   }
 };
 
@@ -102,6 +99,5 @@ export const sendResetSuccessEmail = async (email: string) => {
     console.log(`✅ Reset success email sent to ${email}`);
   } catch (error) {
     console.error("❌ Failed to send reset success email:", error);
-    // Don't throw
   }
 };

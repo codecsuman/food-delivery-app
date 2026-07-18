@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { Restaurant } from "../models/restaurant.model";
-import { uploadImage, deleteImage } from "../utils/cloudinary";
-import { Order } from "../models/order.model";
+import { Restaurant } from "../models/restaurant.model.js";
+import { uploadImage, deleteImage } from "../utils/cloudinary.js";
+import { Order } from "../models/order.model.js";
 import mongoose from "mongoose";
 
 // ======================= CREATE RESTAURANT =======================
@@ -17,7 +17,6 @@ export const createRestaurant = async (req: Request, res: Response) => {
     } = req.body;
     const file = req.file;
 
-    // Check if user already has a restaurant
     const existing = await Restaurant.findOne({ user: req.id });
     if (existing) {
       return res.status(409).json({
@@ -26,7 +25,6 @@ export const createRestaurant = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate required fields
     if (!restaurantName || !city || !country || !deliveryTime || !cuisines) {
       return res.status(400).json({
         success: false,
@@ -41,7 +39,6 @@ export const createRestaurant = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate image type
     const allowedMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
     if (!allowedMimes.includes(file.mimetype)) {
       return res.status(400).json({
@@ -50,7 +47,6 @@ export const createRestaurant = async (req: Request, res: Response) => {
       });
     }
 
-    // Parse cuisines safely
     let parsedCuisines: string[];
     try {
       parsedCuisines = Array.isArray(cuisines)
@@ -64,7 +60,6 @@ export const createRestaurant = async (req: Request, res: Response) => {
       });
     }
 
-    // Upload image
     const base64Image = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
     const cloudResponse = await uploadImage(
       base64Image,
@@ -141,7 +136,6 @@ export const updateRestaurant = async (req: Request, res: Response) => {
       });
     }
 
-    // Update fields only if provided
     if (restaurantName !== undefined)
       restaurant.restaurantName = restaurantName.trim();
     if (city !== undefined) restaurant.city = city.trim();
@@ -151,7 +145,6 @@ export const updateRestaurant = async (req: Request, res: Response) => {
     if (deliveryPrice !== undefined)
       restaurant.deliveryPrice = Number(deliveryPrice);
 
-    // Parse cuisines if provided
     if (cuisines) {
       try {
         const parsedCuisines = Array.isArray(cuisines)
@@ -167,9 +160,7 @@ export const updateRestaurant = async (req: Request, res: Response) => {
       }
     }
 
-    // Upload new image if provided
     if (file) {
-      // Validate image type
       const allowedMimes = [
         "image/jpeg",
         "image/png",
@@ -183,7 +174,6 @@ export const updateRestaurant = async (req: Request, res: Response) => {
         });
       }
 
-      // Delete old image (don't fail if already deleted)
       if (restaurant.imagePublicId) {
         try {
           await deleteImage(restaurant.imagePublicId);
@@ -204,7 +194,6 @@ export const updateRestaurant = async (req: Request, res: Response) => {
 
     await restaurant.save();
 
-    // Re-fetch with populated menus to return complete data
     const updatedRestaurant = await Restaurant.findById(
       restaurant._id,
     ).populate("menus");
@@ -233,7 +222,6 @@ export const getRestaurantOrder = async (req: Request, res: Response) => {
       });
     }
 
-    // Optional pagination
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(
       100,
@@ -275,7 +263,6 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     const { orderId } = req.params;
     const { status } = req.body;
 
-    // Validate status against Order model enum
     const allowedStatuses = [
       "pending",
       "confirmed",
@@ -291,7 +278,6 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate orderId
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
       return res.status(400).json({
         success: false,
@@ -307,7 +293,6 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // Verify ownership
     const restaurant = await Restaurant.findOne({ user: req.id });
     if (
       !restaurant ||
@@ -335,7 +320,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= SEARCH RESTAURANTS (FIXED & OPTIMIZED) =======================
+// ======================= SEARCH RESTAURANTS =======================
 export const searchRestaurant = async (req: Request, res: Response) => {
   try {
     const searchText = req.params.searchText || "";
@@ -347,7 +332,6 @@ export const searchRestaurant = async (req: Request, res: Response) => {
     const andConditions: any[] = [];
     const searchedTerms = new Set<string>();
 
-    // Helper to get menu-matching restaurant IDs
     const getMenuMatchingIds = async (
       term: string,
     ): Promise<mongoose.Types.ObjectId[]> => {
@@ -366,7 +350,6 @@ export const searchRestaurant = async (req: Request, res: Response) => {
         );
     };
 
-    // Build search conditions for searchText
     if (searchText) {
       searchedTerms.add(searchText);
       const orConditions: any[] = [
@@ -384,7 +367,6 @@ export const searchRestaurant = async (req: Request, res: Response) => {
       andConditions.push({ $or: orConditions });
     }
 
-    // Build search conditions for searchQuery (only if different from searchText)
     if (searchQuery && searchQuery !== searchText) {
       const orConditions: any[] = [
         { restaurantName: { $regex: searchQuery, $options: "i" } },
@@ -399,14 +381,12 @@ export const searchRestaurant = async (req: Request, res: Response) => {
       andConditions.push({ $or: orConditions });
     }
 
-    // Filter by cuisines
     if (selectedCuisines.length > 0) {
       andConditions.push({ cuisines: { $in: selectedCuisines } });
     }
 
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
 
-    // Populate menus so users can see available items
     const restaurants = await Restaurant.find(query)
       .populate({
         path: "menus",

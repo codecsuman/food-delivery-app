@@ -1,4 +1,4 @@
-import cloudinary from "./cloudinary";
+import cloudinary from "./cloudinary.js";
 
 interface UploadResult {
   url: string;
@@ -13,7 +13,6 @@ const uploadImageOnCloudinary = async (
     throw new Error("No file buffer found — check multer storage config");
   }
 
-  // Defensive size check (also enforce this in multer's `limits` option)
   const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
   if (file.size > MAX_SIZE_BYTES) {
     throw new Error("File size exceeds 5MB limit");

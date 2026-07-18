@@ -1,11 +1,11 @@
 import express from "express";
-import { isAuthenticated } from "../middlewares/isAuthenticated.ts";
+import { isAuthenticated } from "../middlewares/isAuthenticated.js";
 import {
   createCheckoutSession,
   getOrders,
   getOrderBySessionId,
   stripeWebhook,
-} from "../controller/order.controller.ts";
+} from "../controller/order.controller.js";
 
 const router = express.Router();
 

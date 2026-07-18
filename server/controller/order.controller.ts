@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { Restaurant } from "../models/restaurant.model.ts";
-import { Order } from "../models/order.model.ts";
+import { Restaurant } from "../models/restaurant.model.js";
+import { Order } from "../models/order.model.js";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
@@ -85,9 +85,9 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
       0,
     );
 
-    // FIXED: Create order with proper restaurant reference
+    // Create order with proper restaurant reference
     const order = await Order.create({
-      restaurant: restaurant._id, // This links to the restaurant
+      restaurant: restaurant._id,
       user: req.id,
       deliveryDetails: checkoutSessionRequest.deliveryDetails,
       cartItems: checkoutSessionRequest.cartItems,

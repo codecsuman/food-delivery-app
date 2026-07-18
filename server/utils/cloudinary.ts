@@ -80,3 +80,5 @@ export const getPublicIdFromUrl = (url: string): string | null => {
     return null;
   }
 };
+
+export default cloudinary;

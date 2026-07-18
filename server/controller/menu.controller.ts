@@ -3,18 +3,17 @@ import {
   uploadImage,
   deleteImage,
   getPublicIdFromUrl,
-} from "../utils/cloudinary.ts";
-import { Menu } from "../models/menu.model.ts";
-import { Restaurant } from "../models/restaurant.model.ts";
+} from "../utils/cloudinary.js";
+import { Menu } from "../models/menu.model.js";
+import { Restaurant } from "../models/restaurant.model.js";
 import mongoose from "mongoose";
 
-// ======================= ADD MENU (FIXED) =======================
+// ======================= ADD MENU =======================
 export const addMenu = async (req: Request, res: Response) => {
   try {
     const { name, description, price } = req.body;
     const file = req.file;
 
-    // Validate required fields
     if (!name || !description || !price) {
       return res.status(400).json({
         success: false,
@@ -29,7 +28,6 @@ export const addMenu = async (req: Request, res: Response) => {
       });
     }
 
-    // Find restaurant for this user
     const restaurant = await Restaurant.findOne({ user: req.id });
     if (!restaurant) {
       return res.status(404).json({
@@ -39,11 +37,9 @@ export const addMenu = async (req: Request, res: Response) => {
       });
     }
 
-    // Upload image to Cloudinary
     const base64Image = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
     const cloudResponse = await uploadImage(base64Image, "suman-food/menus");
 
-    // Create menu with restaurant reference
     const menu = await Menu.create({
       name: name.trim(),
       description: description.trim(),
@@ -53,11 +49,9 @@ export const addMenu = async (req: Request, res: Response) => {
       restaurant: restaurant._id,
     });
 
-    // Link menu to restaurant
     restaurant.menus.push(menu._id as any);
     await restaurant.save();
 
-    // FIXED: Return menu with restaurant as string for frontend compatibility
     const menuResponse = {
       _id: menu._id,
       name: menu.name,
@@ -80,14 +74,13 @@ export const addMenu = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= EDIT MENU (FIXED) =======================
+// ======================= EDIT MENU =======================
 export const editMenu = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, description, price } = req.body;
     const file = req.file;
 
-    // Validate menu ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -103,7 +96,6 @@ export const editMenu = async (req: Request, res: Response) => {
       });
     }
 
-    // Ownership check: verify this menu belongs to the user's restaurant
     const restaurant = await Restaurant.findOne({ user: req.id });
     if (!restaurant) {
       return res.status(404).json({
@@ -112,7 +104,6 @@ export const editMenu = async (req: Request, res: Response) => {
       });
     }
 
-    // Check if menu belongs to this restaurant
     if (menu.restaurant.toString() !== restaurant._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -120,14 +111,11 @@ export const editMenu = async (req: Request, res: Response) => {
       });
     }
 
-    // Update fields only if provided
     if (name !== undefined) menu.name = name.trim();
     if (description !== undefined) menu.description = description.trim();
     if (price !== undefined) menu.price = Number(price);
 
-    // Upload new image if provided
     if (file) {
-      // Delete old image
       if (menu.imagePublicId) {
         await deleteImage(menu.imagePublicId);
       }
@@ -141,7 +129,6 @@ export const editMenu = async (req: Request, res: Response) => {
 
     await menu.save();
 
-    // FIXED: Return menu with restaurant as string for frontend compatibility
     const menuResponse = {
       _id: menu._id,
       name: menu.name,
@@ -164,12 +151,11 @@ export const editMenu = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= DELETE MENU (FIXED) =======================
+// ======================= DELETE MENU =======================
 export const deleteMenu = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Validate menu ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -185,7 +171,6 @@ export const deleteMenu = async (req: Request, res: Response) => {
       });
     }
 
-    // Ownership check
     const restaurant = await Restaurant.findOne({ user: req.id });
     if (
       !restaurant ||
@@ -197,18 +182,15 @@ export const deleteMenu = async (req: Request, res: Response) => {
       });
     }
 
-    // Delete image from Cloudinary
     if (menu.imagePublicId) {
       await deleteImage(menu.imagePublicId);
     }
 
-    // Remove menu reference from restaurant
     restaurant.menus = restaurant.menus.filter(
       (menuId) => menuId.toString() !== id,
     );
     await restaurant.save();
 
-    // Delete menu
     await Menu.findByIdAndDelete(id);
 
     return res.status(200).json({
@@ -255,7 +237,7 @@ export const getMenuByRestaurant = async (req: Request, res: Response) => {
 // ======================= GET ALL MENUS =======================
 export const getAllMenus = async (req: Request, res: Response) => {
   try {
-    const menus = await Menu.find().sort({ createdAt: -1 }).limit(20); // optional: cap how many show on home page
+    const menus = await Menu.find().sort({ createdAt: -1 }).limit(20);
 
     return res.status(200).json({
       success: true,

@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { IUserDocument } from "../models/user.model";
+import { IUserDocument } from "../models/user.model.js";
 import { Response } from "express";
 
 export const generateToken = (res: Response, user: IUserDocument) => {
@@ -15,7 +15,7 @@ export const generateToken = (res: Response, user: IUserDocument) => {
     },
     process.env.SECRET_KEY,
     {
-      expiresIn: "7d", // Changed from 1d to 7d for better UX
+      expiresIn: "7d",
     },
   );
 
@@ -25,7 +25,7 @@ export const generateToken = (res: Response, user: IUserDocument) => {
     httpOnly: true,
     sameSite: isProduction ? "none" : "lax",
     secure: isProduction,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms (matches JWT expiry)
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
   return token;
@@ -39,6 +39,6 @@ export const clearToken = (res: Response) => {
     httpOnly: true,
     sameSite: isProduction ? "none" : "lax",
     secure: isProduction,
-    expires: new Date(0), // Expire immediately
+    expires: new Date(0),
   });
 };
