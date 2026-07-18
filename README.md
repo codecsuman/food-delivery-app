@@ -1,299 +1,255 @@
-# Suman Food - Restaurant Management App
+<div align="center">
 
-A full-stack food delivery and restaurant management application built with the MERN stack (MongoDB, Express, React, Node.js).
+# 🍔 Suman Food
+
+### A full-stack food delivery & restaurant management platform built on the MERN stack
+
+<em>Order food, run a restaurant, manage everything — all in one app.</em>
+
+<br/>
+
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Visit_App-FF4B4B?style=for-the-badge)](https://food-delivery-app-pink-iota.vercel.app)
+[![GitHub Repo](https://img.shields.io/badge/⭐_Star_on-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/codecsuman/food-delivery-app)
+[![Fork](https://img.shields.io/badge/🍴_Fork-Repository-2ea44f?style=for-the-badge&logo=github)](https://github.com/codecsuman/food-delivery-app/fork)
+
+<br/>
+
+![React](https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=node.js&logoColor=white)
+![Express](https://img.shields.io/badge/Express-000000?style=flat-square&logo=express&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=flat-square&logo=mongodb&logoColor=white)
+![TailwindCSS](https://img.shields.io/badge/TailwindCSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
+![Stripe](https://img.shields.io/badge/Stripe-626CD9?style=flat-square&logo=stripe&logoColor=white)
+![Cloudinary](https://img.shields.io/badge/Cloudinary-3448C5?style=flat-square&logo=cloudinary&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
+
+<br/>
+
+![Stars](https://img.shields.io/github/stars/codecsuman/food-delivery-app?style=social)
+![Forks](https://img.shields.io/github/forks/codecsuman/food-delivery-app?style=social)
+![Last Commit](https://img.shields.io/github/last-commit/codecsuman/food-delivery-app?style=flat-square&color=blue)
+![License](https://img.shields.io/badge/license-ISC-blue.svg?style=flat-square)
+
+</div>
+
+<br/>
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/Platane/snk/output/github-contribution-grid-snake.svg" width="100%" alt="divider animation"/>
+</div>
+
+## 📖 Table of Contents
+
+- [About](#-about)
+- [Features](#-features)
+- [Tech Stack](#-tech-stack)
+- [Project Structure](#-project-structure)
+- [Getting Started](#-getting-started)
+- [Environment Variables](#-environment-variables)
+- [How to Use](#-how-to-use)
+- [API Reference](#-api-reference)
+- [Troubleshooting](#-troubleshooting)
+- [Security](#-security)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+<br/>
+
+## 📝 About
+
+**Suman Food** is a production-ready, full-stack food ordering and restaurant management system. Any user can spin up their own restaurant storefront, manage a menu, and start taking orders — while customers browse, search, and check out with real Stripe payments.
+
+<div align="center">
+
+| 🌐 Live App | 📦 Repository |
+|:---:|:---:|
+| [food-delivery-app-pink-iota.vercel.app](https://food-delivery-app-pink-iota.vercel.app) | [github.com/codecsuman/food-delivery-app](https://github.com/codecsuman/food-delivery-app) |
+
+</div>
+
+<br/>
 
 ## ✨ Features
 
-- **User Authentication** - Sign up, login, forgot password, email verification
-- **Restaurant Management** - Any user can create their own restaurant
-- **Menu Management** - Add, edit, delete food items with images
-- **Order System** - Customers can order food, restaurant owners can manage orders
-- **Search & Filter** - Search restaurants by name, city, country, cuisine
-- **Dark Mode** - Toggle between light and dark themes
-- **Responsive Design** - Works on desktop and mobile
+<table>
+<tr>
+<td width="50%">
+
+### 👤 For Customers
+- 🔐 Secure signup, login & email verification
+- 🔎 Search restaurants by name, city, cuisine
+- 🛒 Add to cart & Stripe checkout
+- 📦 Track order status in real time
+- 🌗 Light / Dark mode toggle
+- 📱 Fully responsive design
+
+</td>
+<td width="50%">
+
+### 🧑‍🍳 For Restaurant Owners
+- 🏪 Create & manage your own restaurant
+- 📋 Add / edit / delete menu items with images
+- 🖼️ Cloudinary-powered image uploads
+- 📬 Manage incoming orders live
+- 💳 Secure Stripe payment processing
+- 📊 Full admin dashboard
+
+</td>
+</tr>
+</table>
+
+<br/>
 
 ## 🛠 Tech Stack
 
+<div align="center">
+
 ### Backend
-- **Node.js + Express** - Server framework
-- **TypeScript** - Type safety
-- **MongoDB + Mongoose** - Database
-- **JWT** - Authentication tokens
-- **Cloudinary** - Image uploads
-- **Stripe** - Payment processing
-- **Mailtrap** - Email testing
-- **tsx** - Modern TypeScript execution (no deprecated flags)
+`Node.js` · `Express` · `TypeScript` · `MongoDB + Mongoose` · `JWT` · `Cloudinary` · `Stripe` · `Mailtrap` · `tsx`
 
 ### Frontend
-- **React + Vite** - UI framework
-- **TypeScript** - Type safety
-- **Tailwind CSS + shadcn/ui** - Styling
-- **Zustand** - State management
-- **React Router** - Navigation
-- **Axios** - API calls
-- **Sonner** - Toast notifications
+`React` · `Vite` · `TypeScript` · `Tailwind CSS` · `shadcn/ui` · `Zustand` · `React Router` · `Axios` · `Sonner`
+
+</div>
+
+<br/>
 
 ## 📁 Project Structure
+
+<details>
+<summary><b>Click to expand full folder structure</b> 📂</summary>
 
 ```
 food-app/
 ├── server/                   # Backend
 │   ├── index.ts              # Main server file
-│   ├── package.json          # Dependencies
-│   ├── tsconfig.json         # TypeScript config
-│   ├── nodemon.json          # Nodemon config
-│   ├── .env                  # Environment variables
-│   ├── start.bat             # Windows start script
 │   ├── controller/           # Route handlers
-│   │   ├── user.controller.ts
-│   │   ├── restaurant.controller.ts
-│   │   ├── menu.controller.ts
-│   │   └── order.controller.ts
-│   ├── routes/               # API routes
-│   │   ├── user.route.ts
-│   │   ├── restaurant.route.ts
-│   │   ├── menu.route.ts
-│   │   └── order.route.ts
-│   ├── models/               # Database schemas
-│   │   ├── user.model.ts
-│   │   ├── restaurant.model.ts
-│   │   ├── menu.model.ts
-│   │   └── order.model.ts
-│   ├── middlewares/          # Auth, upload, etc.
-│   │   ├── isAuthenticated.ts
-│   │   └── multer.ts
-│   ├── utils/                # Helpers
-│   │   ├── cloudinary.ts
-│   │   ├── generateToken.ts
-│   │   └── imageUpload.ts
-│   ├── db/                   # Database connection
-│   │   └── connectDB.ts
-│   └── mailtrap/             # Email service
-│       ├── email.ts
-│       ├── htmlEmail.ts
-│       └── mailtrap.ts
+│   ├── routes/                # API routes
+│   ├── models/                # Database schemas
+│   ├── middlewares/           # Auth, upload, etc.
+│   ├── utils/                 # Helpers (Cloudinary, JWT)
+│   ├── db/                    # Database connection
+│   └── mailtrap/              # Email service
 │
 └── client/                   # Frontend
     ├── src/
-    │   ├── App.tsx            # Main app component
-    │   ├── main.tsx           # Entry point
     │   ├── components/        # UI components
-    │   │   ├── Navbar.tsx
-    │   │   ├── HereSection.tsx
-    │   │   ├── Profile.tsx
-    │   │   ├── Cart.tsx
-    │   │   ├── SearchPage.tsx
-    │   │   ├── RestaurantDetail.tsx
-    │   │   ├── AvailableMenu.tsx
-    │   │   ├── FilterPage.tsx
-    │   │   ├── Footer.tsx
-    │   │   ├── Loading.tsx
-    │   │   ├── Success.tsx
-    │   │   └── CheckoutConfirmPage.tsx
     │   ├── admin/              # Admin dashboard
-    │   │   ├── Restaurant.tsx
-    │   │   ├── AddMenu.tsx
-    │   │   ├── EditMenu.tsx
-    │   │   └── Orders.tsx
-    │   ├── auth/               # Auth pages
-    │   │   ├── Login.tsx
-    │   │   ├── Signup.tsx
-    │   │   ├── ForgotPassword.tsx
-    │   │   ├── ResetPassword.tsx
-    │   │   └── VerifyEmail.tsx
+    │   ├── auth/                # Auth pages
     │   ├── store/               # Zustand stores
-    │   │   ├── useUserStore.ts
-    │   │   ├── useRestaurantStore.ts
-    │   │   ├── useMenuStore.ts
-    │   │   ├── useCartStore.ts
-    │   │   ├── useOrderStore.ts
-    │   │   └── useThemeStore.ts
-    │   ├── types/               # TypeScript types
-    │   │   ├── restaurantType.ts
-    │   │   ├── orderType.ts
-    │   │   └── cartType.ts
+    │   ├── types/                # TypeScript types
     │   ├── schema/               # Zod validation schemas
-    │   │   ├── userSchema.ts
-    │   │   ├── restaurantSchema.ts
-    │   │   └── menuSchema.ts
-    │   ├── layout/               # Layout components
-    │   │   └── MainLayout.tsx
-    │   └── utils.ts              # Utility functions
-    ├── package.json
+    │   └── layout/                # Layout components
     ├── vite.config.ts
-    ├── tsconfig.json
     └── tailwind.config.js
 ```
 
-## 🚀 Setup Instructions
+</details>
+
+<br/>
+
+## 🚀 Getting Started
 
 ### Prerequisites
+> `Node.js 18+` · `MongoDB` (local or Atlas) · `Git`
 
-- Node.js 18+ installed
-- MongoDB installed and running locally
-- Git (optional)
-
-### 1. Clone or Download the Project
-
+### 1️⃣ Clone the repository
 ```bash
-git clone <your-repo-url>
-cd food-app
+git clone https://github.com/codecsuman/food-delivery-app.git
+cd food-delivery-app
 ```
 
-### 2. Backend Setup
-
+### 2️⃣ Backend setup
 ```bash
 cd server
-
-# Install dependencies
 npm install
-
-# Create .env file (copy from .env.example or create manually)
-# See Environment Variables section below
-
-# Start the server
 npm run dev
 ```
 
-Or simply double-click `start.bat` (Windows) to auto-start.
-
-### 3. Frontend Setup
-
+### 3️⃣ Frontend setup
 ```bash
 cd client
-
-# Install dependencies
 npm install
-
-# Start the development server
 npm run dev
 ```
 
-### 4. Open in Browser
+### 4️⃣ Open in browser
 
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:8001
-- Health Check: http://localhost:8001/health
+| Service | URL |
+|---|---|
+| 🖥️ Frontend | http://localhost:5173 |
+| ⚙️ Backend API | http://localhost:8001 |
+| ❤️ Health Check | http://localhost:8001/health |
+
+<br/>
 
 ## 🔧 Environment Variables
 
-Create a `.env` file in the `server/` folder:
+Create a `.env` file inside `server/`:
 
 ```env
-# =========================
 # SERVER
-# =========================
 PORT=8001
 NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
 
-# =========================
 # DATABASE
-# =========================
 MONGO_URI=mongodb://localhost:27017/suman_food
 
-# =========================
 # JWT
-# =========================
-SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
+SECRET_KEY=your-super-secret-jwt-key
 
-# =========================
-# STRIPE (Payment)
-# =========================
+# STRIPE
 STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
 WEBHOOK_ENDPOINT_SECRET=whsec_your_webhook_secret
 
-# =========================
-# CLOUDINARY (Image Uploads)
-# =========================
+# CLOUDINARY
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
 
-# =========================
-# MAILTRAP (Email Testing)
-# =========================
+# MAILTRAP
 MAILTRAP_API_TOKEN=your_mailtrap_token
 MAILTRAP_TEST_INBOX_ID=your_inbox_id
 MAILTRAP_SENDER_EMAIL=your_sender@email.com
 ```
 
-> **Note:** The app works without Cloudinary and Mailtrap configured - images will use placeholders and emails will be logged to console.
+> 💡 **Tip:** The app runs even without Cloudinary/Mailtrap configured — it falls back to placeholder images and console-logged emails.
+
+<br/>
 
 ## 🎯 How to Use
 
-### For Restaurant Owners
+<table>
+<tr>
+<td width="50%" valign="top">
 
-1. **Sign Up** - Create an account (everyone is automatically an admin)
-2. **Dashboard → Restaurant** - Create your restaurant with name, city, cuisines, and image
-3. **Dashboard → Menu** - Add food items with name, description, price, and image
-4. **Dashboard → Orders** - View and manage incoming orders
+**🏪 Restaurant Owners**
+1. Sign up — every user is admin-enabled
+2. Go to **Dashboard → Restaurant**, create your storefront
+3. **Dashboard → Menu** — add food items with images
+4. **Dashboard → Orders** — manage incoming orders
 
-### For Customers
+</td>
+<td width="50%" valign="top">
 
-1. **Sign Up** - Create an account
-2. **Home** - Browse restaurants or search by name/city/cuisine
-3. **Restaurant Page** - View menu and add items to cart
-4. **Cart** - Review order and checkout with Stripe
-5. **Orders** - Track order status
+**🛍️ Customers**
+1. Sign up for an account
+2. Browse or search restaurants by name/city/cuisine
+3. Add items to cart & check out via Stripe
+4. Track your order status live
 
-## 🐛 Troubleshooting
+</td>
+</tr>
+</table>
 
-### Port Already in Use (EADDRINUSE)
+<br/>
 
-**Problem:** `Error: listen EADDRINUSE: address already in use :::8001`
+## 📡 API Reference
 
-**Solution:**
-
-```bash
-# Kill all Node processes
-taskkill /F /IM node.exe
-
-# Or use the provided script
-npm run kill
-npm run restart
-```
-
-Or simply double-click `start.bat` which auto-kills the old process.
-
-### Module Not Found (ERR_MODULE_NOT_FOUND)
-
-**Problem:** `Cannot find module './db/connectDB'`
-
-**Solution:** All imports now use `.ts` extensions for ESM compatibility. Make sure you're using the latest files.
-
-### MongoDB Connection Failed
-
-**Problem:** `MongoDB connection error`
-
-**Solution:**
-
-1. Make sure MongoDB is installed and running
-2. Check `MONGO_URI` in `.env`
-3. For local MongoDB: `mongodb://localhost:27017/suman_food`
-4. For MongoDB Atlas: `mongodb+srv://user:pass@cluster.mongodb.net/suman_food`
-
-### Cloudinary Image Upload Fails
-
-**Problem:** Images not uploading
-
-**Solution:**
-
-1. Check Cloudinary credentials in `.env`
-2. Or the app will use placeholder images automatically
-
-### Email Not Sending
-
-**Problem:** Welcome/verification emails not received
-
-**Solution:**
-
-1. Check Mailtrap credentials in `.env`
-2. Or emails will be logged to console for testing
-
-## 📡 API Endpoints
-
-### Authentication
+<details>
+<summary><b>🔐 Authentication</b></summary>
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
@@ -305,7 +261,10 @@ Or simply double-click `start.bat` which auto-kills the old process.
 | POST | `/api/v1/user/forgot-password` | Request password reset |
 | POST | `/api/v1/user/reset-password/:token` | Reset password |
 
-### Restaurant
+</details>
+
+<details>
+<summary><b>🏪 Restaurant</b></summary>
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
@@ -315,7 +274,10 @@ Or simply double-click `start.bat` which auto-kills the old process.
 | GET | `/api/v1/restaurant/search/:text` | Search restaurants |
 | GET | `/api/v1/restaurant/:id` | Get single restaurant |
 
-### Menu
+</details>
+
+<details>
+<summary><b>📋 Menu</b></summary>
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
@@ -324,7 +286,10 @@ Or simply double-click `start.bat` which auto-kills the old process.
 | DELETE | `/api/v1/menu/:id` | Delete menu item |
 | GET | `/api/v1/menu/restaurant/:id` | Get menu by restaurant |
 
-### Order
+</details>
+
+<details>
+<summary><b>📦 Order</b></summary>
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
@@ -333,24 +298,92 @@ Or simply double-click `start.bat` which auto-kills the old process.
 | GET | `/api/v1/order/` | Get my orders |
 | GET | `/api/v1/order/:sessionId` | Get order by session |
 
-## 🔒 Security Notes
+</details>
 
-- **JWT tokens** are stored in HTTP-only cookies
-- **Passwords** are hashed with bcrypt
-- **Image uploads** are validated (type, size)
-- **CORS** is configured for frontend origin only
-- **Users** can only manage their own restaurant and orders
+<br/>
+
+## 🐛 Troubleshooting
+
+<details>
+<summary><b>Port already in use (EADDRINUSE)</b></summary>
+
+```bash
+taskkill /F /IM node.exe
+npm run kill
+npm run restart
+```
+Or double-click `start.bat` — it auto-kills the old process.
+</details>
+
+<details>
+<summary><b>Module not found (ERR_MODULE_NOT_FOUND)</b></summary>
+
+All imports use `.ts` extensions for ESM compatibility — make sure you're on the latest files.
+</details>
+
+<details>
+<summary><b>MongoDB connection failed</b></summary>
+
+1. Confirm MongoDB is installed and running
+2. Check `MONGO_URI` in `.env`
+3. Local: `mongodb://localhost:27017/suman_food`
+4. Atlas: `mongodb+srv://user:pass@cluster.mongodb.net/suman_food`
+</details>
+
+<details>
+<summary><b>Cloudinary upload fails</b></summary>
+
+Check your Cloudinary credentials in `.env` — otherwise the app falls back to placeholder images.
+</details>
+
+<details>
+<summary><b>Emails not sending</b></summary>
+
+Check Mailtrap credentials in `.env` — otherwise emails are logged to console for testing.
+</details>
+
+<br/>
+
+## 🔒 Security
+
+- ✅ JWT tokens stored in **HTTP-only cookies**
+- ✅ Passwords hashed with **bcrypt**
+- ✅ Image uploads validated for type & size
+- ✅ CORS locked to frontend origin only
+- ✅ Users can only manage their own restaurant & orders
+
+<br/>
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome!
+
+```bash
+1. Fork the project
+2. Create your feature branch  → git checkout -b feature/AmazingFeature
+3. Commit your changes        → git commit -m "Add some AmazingFeature"
+4. Push to the branch         → git push origin feature/AmazingFeature
+5. Open a Pull Request
+```
+
+<br/>
 
 ## 📄 License
 
-ISC License
+Distributed under the **ISC License**.
 
-## 🙏 Credits
+<br/>
 
-Built with ❤️ using:
+<div align="center">
 
-- [React](https://react.dev/)
-- [Express](https://expressjs.com/)
-- [MongoDB](https://www.mongodb.com/)
-- [Tailwind CSS](https://tailwindcss.com/)
-- [shadcn/ui](https://ui.shadcn.com/)
+### Built with ❤️ using
+
+[React](https://react.dev/) · [Express](https://expressjs.com/) · [MongoDB](https://www.mongodb.com/) · [Tailwind CSS](https://tailwindcss.com/) · [shadcn/ui](https://ui.shadcn.com/)
+
+<br/>
+
+⭐ **If you found this project useful, consider giving it a star!** ⭐
+
+[![GitHub Stars](https://img.shields.io/github/stars/codecsuman/food-delivery-app?style=for-the-badge&logo=github&color=yellow)](https://github.com/codecsuman/food-delivery-app/stargazers)
+
+</div>
