@@ -1,0 +1,24 @@
+{
+            "watch": [
+                        "*.ts",
+                        "routes/**/*.ts",
+                        "controller/**/*.ts",
+                        "models/**/*.ts",
+                        "middlewares/**/*.ts",
+                        "utils/**/*.ts",
+                        "db/**/*.ts",
+                        "mailtrap/**/*.ts"
+            ],
+            "ext": "ts,json",
+            "ignore": [
+                        "node_modules",
+                        "dist",
+                        "uploads"
+            ],
+            "exec": "node --import tsx index.ts",
+            "env": {
+                        "NODE_ENV": "development"
+            },
+            "signal": "SIGTERM",
+            "delay": "1000"
+}

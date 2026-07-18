@@ -1,0 +1,287 @@
+import { Request, Response } from "express";
+import { Restaurant } from "../models/restaurant.model.ts";
+import { Order } from "../models/order.model.ts";
+import Stripe from "stripe";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+
+type CheckoutSessionRequest = {
+  cartItems: {
+    menuId: string;
+    name: string;
+    image: string;
+    price: number;
+    quantity: number;
+  }[];
+  deliveryDetails: {
+    name: string;
+    email: string;
+    address: string;
+    city: string;
+  };
+  restaurantId: string;
+};
+
+// ======================= GET ORDERS (for user) =======================
+export const getOrders = async (req: Request, res: Response) => {
+  try {
+    const orders = await Order.find({ user: req.id })
+      .populate("restaurant", "restaurantName imageUrl")
+      .populate("user", "fullname email")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      orders,
+    });
+  } catch (error) {
+    console.error("Get orders error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ======================= CREATE CHECKOUT SESSION =======================
+export const createCheckoutSession = async (req: Request, res: Response) => {
+  try {
+    const checkoutSessionRequest: CheckoutSessionRequest = req.body;
+
+    if (!checkoutSessionRequest.cartItems?.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Cart items are required",
+      });
+    }
+
+    if (!checkoutSessionRequest.deliveryDetails) {
+      return res.status(400).json({
+        success: false,
+        message: "Delivery details are required",
+      });
+    }
+
+    if (!checkoutSessionRequest.restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: "Restaurant ID is required",
+      });
+    }
+
+    const restaurant = await Restaurant.findById(
+      checkoutSessionRequest.restaurantId,
+    ).populate("menus");
+
+    if (!restaurant) {
+      return res.status(404).json({
+        success: false,
+        message: "Restaurant not found",
+      });
+    }
+
+    const totalAmount = checkoutSessionRequest.cartItems.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0,
+    );
+
+    // FIXED: Create order with proper restaurant reference
+    const order = await Order.create({
+      restaurant: restaurant._id, // This links to the restaurant
+      user: req.id,
+      deliveryDetails: checkoutSessionRequest.deliveryDetails,
+      cartItems: checkoutSessionRequest.cartItems,
+      totalAmount,
+      status: "pending",
+    });
+
+    const lineItems = createLineItems(checkoutSessionRequest, restaurant.menus);
+
+    if (restaurant.deliveryPrice > 0) {
+      lineItems.push({
+        price_data: {
+          currency: "inr",
+          product_data: {
+            name: "Delivery Fee",
+          } as any,
+          unit_amount: Math.round(restaurant.deliveryPrice * 100),
+        },
+        quantity: 1,
+      } as any);
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      shipping_address_collection: {
+        allowed_countries: ["IN", "GB", "US", "CA"],
+      },
+      line_items: lineItems,
+      mode: "payment",
+      success_url: `${process.env.FRONTEND_URL}/order/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/cart`,
+      metadata: {
+        orderId: order._id.toString(),
+        images: JSON.stringify(
+          checkoutSessionRequest.cartItems.map((item) => item.image),
+        ),
+      },
+    });
+
+    if (!session.url) {
+      return res.status(400).json({
+        success: false,
+        message: "Error while creating checkout session",
+      });
+    }
+
+    order.paymentIntentId = session.id;
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      session,
+      orderId: order._id,
+    });
+  } catch (error) {
+    console.error("Create checkout session error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ======================= STRIPE WEBHOOK =======================
+export const stripeWebhook = async (req: Request, res: Response) => {
+  let event: Stripe.Event;
+
+  try {
+    const signature = req.headers["stripe-signature"];
+    if (!signature) {
+      return res.status(400).send("Missing stripe-signature header");
+    }
+
+    const secret = process.env.WEBHOOK_ENDPOINT_SECRET!;
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      signature as string,
+      secret,
+    );
+  } catch (error: any) {
+    console.error("Webhook signature verification failed:", error.message);
+    return res.status(400).send(`Webhook error: ${error.message}`);
+  }
+
+  if (event.type === "checkout.session.completed") {
+    try {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const order = await Order.findById(session.metadata?.orderId);
+
+      if (!order) {
+        console.error(`Webhook: order ${session.metadata?.orderId} not found`);
+        return res.status(200).send();
+      }
+
+      if (session.amount_total) {
+        order.totalAmount = session.amount_total / 100;
+      }
+      order.status = "confirmed";
+      order.paymentIntentId = session.payment_intent as string;
+      await order.save();
+
+      console.log(`✅ Order ${order._id} confirmed via webhook`);
+    } catch (error) {
+      console.error("Error handling webhook event:", error);
+      return res.status(200).send();
+    }
+  }
+
+  if (event.type === "payment_intent.payment_failed") {
+    try {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
+
+      if (order) {
+        order.status = "payment_failed";
+        await order.save();
+        console.log(`❌ Order ${order._id} payment failed`);
+      }
+    } catch (error) {
+      console.error("Error handling payment failure:", error);
+    }
+  }
+
+  res.status(200).send();
+};
+
+// ======================= CREATE LINE ITEMS =======================
+export const createLineItems = (
+  checkoutSessionRequest: CheckoutSessionRequest,
+  menuItems: any[],
+) => {
+  const lineItems: any[] = checkoutSessionRequest.cartItems.map((cartItem) => {
+    const menuItem = menuItems.find(
+      (item: any) => item._id.toString() === cartItem.menuId,
+    );
+
+    if (!menuItem) {
+      throw new Error(`Menu item ${cartItem.menuId} not found`);
+    }
+
+    const productData: any = {
+      name: menuItem.name,
+    };
+
+    if (menuItem.image) {
+      productData.images = [menuItem.image];
+    }
+
+    return {
+      price_data: {
+        currency: "inr",
+        product_data: productData,
+        unit_amount: Math.round(menuItem.price * 100),
+      },
+      quantity: cartItem.quantity,
+    };
+  });
+
+  return lineItems;
+};
+
+// ======================= GET ORDER BY SESSION ID =======================
+export const getOrderBySessionId = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (!session.metadata?.orderId) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found for this session",
+      });
+    }
+
+    const order = await Order.findById(session.metadata.orderId)
+      .populate("restaurant", "restaurantName imageUrl")
+      .populate("user", "fullname email");
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      order,
+      session,
+    });
+  } catch (error) {
+    console.error("Get order by session error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
