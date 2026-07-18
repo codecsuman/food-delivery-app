@@ -179,7 +179,7 @@ export const useMenuStore = create<MenuState>()(
       name: "menu-store",
       storage: createJSONStorage(() => localStorage),
       // FIXED: Don't persist menu data to avoid stale data
-      partialize: (state) => ({
+      partialize: (_state) => ({
         // Only persist nothing - always fetch fresh
       }),
     },

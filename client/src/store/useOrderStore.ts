@@ -18,7 +18,7 @@ const getErrorMessage = (error: any): string => {
 
 export const useOrderStore = create<OrderState>()(
   persist(
-    (set, get) => ({
+    (set, _get) => ({
       loading: false,
       orders: [],
 
@@ -102,7 +102,7 @@ export const useOrderStore = create<OrderState>()(
       },
 
       // FIXED: Poll for order status updates (real-time simulation)
-      pollOrderStatus: async (orderId: string, interval: number = 5000) => {
+      pollOrderStatus: async (orderId: string, _interval: number = 5000) => {
         const poll = async () => {
           try {
             const response = await axios.get(`${API_END_POINT}/${orderId}`);
@@ -151,7 +151,7 @@ export const useOrderStore = create<OrderState>()(
       name: "order-store",
       storage: createJSONStorage(() => localStorage),
       // FIXED: Don't persist orders - always fetch fresh
-      partialize: (state) => ({}),
+      partialize: (_state) => ({}),
     },
   ),
 );

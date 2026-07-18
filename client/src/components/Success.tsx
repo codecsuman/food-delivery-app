@@ -1,4 +1,4 @@
-import { IndianRupee, CheckCircle, Package, Clock, MapPin, User, Mail, Loader2 } from "lucide-react";
+import { IndianRupee, CheckCircle, Package, MapPin, User, Mail, Loader2 } from "lucide-react";
 import { Separator } from "./ui/separator";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "./ui/button";

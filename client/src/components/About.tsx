@@ -1,12 +1,13 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { 
-  Utensils, 
-  Heart, 
-  Shield, 
-  Zap, 
-  Users, 
-  Globe, 
+import type { Variants } from "framer-motion";
+import {
+  Utensils,
+  Heart,
+  Shield,
+  Zap,
+  Users,
+  Globe,
   ArrowRight,
   Code2,
   Rocket,
@@ -14,12 +15,12 @@ import {
 } from "lucide-react";
 
 const About = () => {
-  const fadeInUp = {
+  const fadeInUp: Variants = {
     hidden: { opacity: 0, y: 30 },
     visible: (i: number) => ({
       opacity: 1,
       y: 0,
-      transition: { delay: i * 0.1, duration: 0.5, ease: "easeOut" },
+      transition: { delay: i * 0.1, duration: 0.5, ease: "easeOut" as const },
     }),
   };
 

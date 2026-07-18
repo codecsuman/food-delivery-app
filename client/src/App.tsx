@@ -13,7 +13,6 @@ import RestaurantDetail from "./components/RestaurantDetail";
 import Cart from "./components/Cart";
 import Restaurant from "./admin/Restaurant";
 import AddMenu from "./admin/AddMenu";
-import EditMenu from "./admin/EditMenu";
 import Orders from "./admin/Orders";
 import Success from "./components/Success";
 import Loading from "./components/Loading";
@@ -54,6 +53,15 @@ const AuthenticatedUser = ({ children }: { children: React.ReactNode }) => {
 };
 
 // ======================= ROUTER =======================
+// NOTE: EditMenu is NOT routed here. It's a modal/dialog component
+// (open, onOpenChange, form, Update Menu button) meant to be rendered
+// inside an admin page (e.g. Restaurant.tsx / Orders.tsx / AddMenu.tsx)
+// and toggled via local state when the user clicks "Edit" on a menu item.
+// Import it directly in that page instead:
+//   import EditMenu from "./EditMenu";
+//   const [editOpen, setEditOpen] = useState(false);
+//   const [selectedMenu, setSelectedMenu] = useState<MenuItem | null>(null);
+//   <EditMenu selectedMenu={selectedMenu} editOpen={editOpen} setEditOpen={setEditOpen} />
 
 const appRouter = createBrowserRouter([
   // Main app with protected routes
@@ -114,10 +122,6 @@ const appRouter = createBrowserRouter([
       {
         path: "/admin/menu",
         element: <AddMenu />,
-      },
-      {
-        path: "/admin/edit-menu/:id",
-        element: <EditMenu />,
       },
       {
         path: "/admin/orders",

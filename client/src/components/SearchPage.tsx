@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import FilterPage from "./FilterPage";
 import { Input } from "./ui/input";
-import { useEffect, useState, useCallback, useRef } from "react"; // FIXED: Added useCallback, useRef
+import { useEffect, useState, useRef } from "react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Globe, MapPin, Search, SearchX, X } from "lucide-react";
@@ -23,31 +23,23 @@ const SearchPage = () => {
     resetAppliedFilter,
   } = useRestaurantStore();
 
-  // FIXED: Track if initial search has been done
+  // Track if initial search has been done
   const initialSearchDone = useRef(false);
 
-  // FIXED: Debounced search function
-  const debouncedSearch = useCallback(
-    (text: string, query: string, filters: string[]) => {
-      searchRestaurant(text, query, filters);
-    },
-    [searchRestaurant]
-  );
-
-  // FIXED: Create a stable debounce ref
+  // Stable debounce ref
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // FIXED: Trigger search when params.text, appliedFilter, OR searchQuery changes
+  // Trigger search when params.text, appliedFilter, OR searchQuery changes
   useEffect(() => {
     if (params.text) {
-      // FIXED: Clear previous debounce
+      // Clear previous debounce
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
-      
-      // FIXED: Debounce the search to avoid too many API calls
+
+      // Debounce the search to avoid too many API calls
       debounceRef.current = setTimeout(() => {
-        searchRestaurant(params.text, searchQuery, appliedFilter);
+       searchRestaurant(params.text ?? "", searchQuery, appliedFilter);
         initialSearchDone.current = true;
       }, 300);
 
@@ -57,9 +49,9 @@ const SearchPage = () => {
         }
       };
     }
-  }, [params.text, appliedFilter, searchQuery, searchRestaurant]); // FIXED: Added searchQuery
+  }, [params.text, appliedFilter, searchQuery, searchRestaurant]);
 
-  // FIXED: Handle search button click with immediate search
+  // Handle search button click with immediate search
   const handleSearch = () => {
     if (params.text) {
       // Clear any pending debounce
@@ -82,7 +74,7 @@ const SearchPage = () => {
 
   const handleClearAllFilters = () => {
     resetAppliedFilter();
-    // FIXED: Also clear search query and re-search
+    // Also clear search query and re-search
     setSearchQuery("");
   };
 
@@ -92,7 +84,7 @@ const SearchPage = () => {
         <div className="flex flex-col md:flex-row justify-between gap-10">
           <FilterPage />
           <div className="flex-1">
-            {/* Search Input - FIXED: Better UX */}
+            {/* Search Input */}
             <div className="flex items-center gap-2 mb-6">
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -104,7 +96,7 @@ const SearchPage = () => {
                   onKeyDown={handleKeyDown}
                   className="h-12 pl-11 rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm focus-visible:ring-orange-500"
                 />
-                {/* FIXED: Show clear button when searchQuery has text */}
+                {/* Show clear button when searchQuery has text */}
                 {searchQuery && (
                   <button
                     onClick={() => {
@@ -237,7 +229,7 @@ const SearchPage = () => {
                         </p>
                       </div>
 
-                      {/* FIXED: Show menus if available (for search by menu name) */}
+                      {/* Show menus if available (for search by menu name) */}
                       {restaurant.menus && restaurant.menus.length > 0 && (
                         <div className="mb-3">
                           <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Popular items:</p>
@@ -340,7 +332,6 @@ const SearchPageSkeleton = () => {
 
 // ======================= NO RESULTS =======================
 
-// FIXED: Enhanced NoResultFound with more options
 const NoResultFound = ({ 
   searchText, 
   searchQuery,

@@ -9,7 +9,7 @@ import { useState } from "react";
 const AvailableMenu = ({ menus, loading }: { menus: MenuItem[]; loading?: boolean }) => {
   const { addToCart, cart } = useCartStore();
   const navigate = useNavigate();
-  const [addedItems, setAddedItems] = useState<Set<string>>(new Set());
+  const [, setAddedItems] = useState<Set<string>>(new Set());
   const [addingId, setAddingId] = useState<string | null>(null); // FIXED: Track which item is being added
 
   const isInCart = (menuId: string) => {
