@@ -26,6 +26,7 @@ export const useRestaurantStore = create<RestaurantState>()(
       appliedFilter: [],
       singleRestaurant: null,
       restaurantOrder: [],
+      filterOptions: { cuisines: [], dishes: [] },
 
       createRestaurant: async (formData: FormData) => {
         try {
@@ -114,6 +115,23 @@ export const useRestaurantStore = create<RestaurantState>()(
           }
         } finally {
           set({ loading: false });
+        }
+      },
+
+      // ======================= GET FILTER OPTIONS (distinct cuisines + dishes) =======================
+      getFilterOptions: async () => {
+        try {
+          const response = await axios.get(`${API_END_POINT}/filters`);
+          if (response.data.success) {
+            set({
+              filterOptions: {
+                cuisines: response.data.cuisines || [],
+                dishes: response.data.dishes || [],
+              },
+            });
+          }
+        } catch (error: any) {
+          // silent fail — filter panel just falls back to empty lists
         }
       },
 

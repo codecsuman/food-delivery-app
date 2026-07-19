@@ -10,6 +10,7 @@ import {
   getUserRestaurants,
   getAllRestaurants,
   deleteRestaurant,
+  getFilterOptions,
 } from "../controller/restaurant.controller.js";
 import upload from "../middlewares/multer.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
@@ -52,6 +53,11 @@ router.put("/order/:orderId/status", isAuthenticated, updateOrderStatus);
 router.get("/search/:searchText", searchRestaurant);
 // Additional route for query-only search (from hero section)
 router.get("/search", searchRestaurant);
+
+// Filter options — distinct cuisines & dishes (public)
+// Must stay ABOVE the "/:id" route below, or "/filters" gets
+// captured as :id and hits getSingleRestaurant instead.
+router.get("/filters", getFilterOptions);
 
 // Get single restaurant (public)
 router.get("/:id", getSingleRestaurant);

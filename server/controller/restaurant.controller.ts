@@ -507,6 +507,29 @@ export const searchRestaurant = async (req: Request, res: Response) => {
   }
 };
 
+// ======================= GET FILTER OPTIONS (distinct cuisines + dishes) =======================
+export const getFilterOptions = async (_req: Request, res: Response) => {
+  try {
+    const Menu = mongoose.model("Menu");
+
+    const [cuisines, dishes] = await Promise.all([
+      Restaurant.distinct("cuisines"),
+      Menu.distinct("name"),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      cuisines: cuisines.filter(Boolean).sort(),
+      dishes: dishes.filter(Boolean).sort(),
+    });
+  } catch (error) {
+    console.error("Get filter options error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
 // ======================= GET SINGLE RESTAURANT (public) =======================
 export const getSingleRestaurant = async (req: Request, res: Response) => {
   try {

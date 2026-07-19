@@ -34,6 +34,11 @@ export type SearchedRestaurant = {
   count?: number;
 };
 
+export type FilterOptionsData = {
+  cuisines: string[];
+  dishes: string[];
+};
+
 export type RestaurantState = {
   loading: boolean;
   restaurant: Restaurant | null;
@@ -42,6 +47,7 @@ export type RestaurantState = {
   appliedFilter: string[];
   singleRestaurant: Restaurant | null;
   restaurantOrder: Orders[];
+  filterOptions: FilterOptionsData;
   createRestaurant: (formData: FormData) => Promise<void>;
   getRestaurant: () => Promise<void>;
   updateRestaurant: (formData: FormData) => Promise<void>;
@@ -52,6 +58,7 @@ export type RestaurantState = {
     priceRange?: [number, number],
     city?: string,
   ) => Promise<void>;
+  getFilterOptions: () => Promise<void>;
   addMenuToRestaurant: (menu: MenuItem) => void;
   updateMenuToRestaurant: (menu: MenuItem) => void;
   removeMenuFromRestaurant: (menuId: string) => void;

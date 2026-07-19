@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
@@ -9,31 +10,42 @@ export type FilterOptionsState = {
   label: string;
 };
 
-const cuisineOptions: FilterOptionsState[] = [
-  { id: "indian", label: "Indian" },
-  { id: "chinese", label: "Chinese" },
-  { id: "italian", label: "Italian" },
-  { id: "south-indian", label: "South Indian" },
-];
-
-const dishOptions: FilterOptionsState[] = [
-  { id: "burger", label: "Burger" },
-  { id: "thali", label: "Thali" },
-  { id: "biryani", label: "Biryani" },
-  { id: "momos", label: "Momos" },
-  { id: "pizza", label: "Pizza" },
-  { id: "rolls", label: "Rolls" },
-];
+const toOptions = (values: string[]): FilterOptionsState[] =>
+  values.map((label) => ({
+    id: label.toLowerCase().replace(/\s+/g, "-"),
+    label,
+  }));
 
 const FilterPage = () => {
-  const { setAppliedFilter, appliedFilter, resetAppliedFilter } = useRestaurantStore();
+  const {
+    setAppliedFilter,
+    appliedFilter,
+    resetAppliedFilter,
+    filterOptions,
+    getFilterOptions,
+  } = useRestaurantStore();
+
+  useEffect(() => {
+    getFilterOptions();
+  }, [getFilterOptions]);
+
+  const cuisineOptions = toOptions(filterOptions.cuisines);
+  const dishOptions = toOptions(filterOptions.dishes);
 
   const appliedFilterHandler = (value: string) => {
     setAppliedFilter(value);
   };
 
-  const renderOptionGroup = (options: FilterOptionsState[]) =>
-    options.map((option) => {
+  const renderOptionGroup = (options: FilterOptionsState[]) => {
+    if (options.length === 0) {
+      return (
+        <p className="text-xs text-gray-400 dark:text-gray-500 px-2.5 py-1.5">
+          None yet
+        </p>
+      );
+    }
+
+    return options.map((option) => {
       const isChecked = appliedFilter.includes(option.label);
       return (
         <div
@@ -64,6 +76,7 @@ const FilterPage = () => {
         </div>
       );
     });
+  };
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 h-fit">

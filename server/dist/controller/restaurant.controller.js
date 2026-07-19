@@ -419,6 +419,27 @@ export const searchRestaurant = async (req, res) => {
             .json({ success: false, message: "Internal server error" });
     }
 };
+// ======================= GET FILTER OPTIONS (distinct cuisines + dishes) =======================
+export const getFilterOptions = async (_req, res) => {
+    try {
+        const Menu = mongoose.model("Menu");
+        const [cuisines, dishes] = await Promise.all([
+            Restaurant.distinct("cuisines"),
+            Menu.distinct("name"),
+        ]);
+        return res.status(200).json({
+            success: true,
+            cuisines: cuisines.filter(Boolean).sort(),
+            dishes: dishes.filter(Boolean).sort(),
+        });
+    }
+    catch (error) {
+        console.error("Get filter options error:", error);
+        return res
+            .status(500)
+            .json({ success: false, message: "Internal server error" });
+    }
+};
 // ======================= GET SINGLE RESTAURANT (public) =======================
 export const getSingleRestaurant = async (req, res) => {
     try {
