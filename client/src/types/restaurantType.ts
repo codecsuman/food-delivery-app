@@ -49,6 +49,8 @@ export type RestaurantState = {
     searchText: string,
     searchQuery: string,
     selectedCuisines: string[],
+    priceRange?: [number, number],
+    city?: string,
   ) => Promise<void>;
   addMenuToRestaurant: (menu: MenuItem) => void;
   updateMenuToRestaurant: (menu: MenuItem) => void;

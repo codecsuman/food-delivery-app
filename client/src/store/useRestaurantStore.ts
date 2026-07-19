@@ -79,18 +79,26 @@ export const useRestaurantStore = create<RestaurantState>()(
         }
       },
 
+      // ======================= SEARCH (real-time + filters) =======================
       searchRestaurant: async (
         searchText: string,
         searchQuery: string,
         selectedCuisines: string[],
+        priceRange?: [number, number],
+        city?: string,
       ) => {
         try {
           set({ loading: true });
           const params = new URLSearchParams();
-          params.set("searchText", searchText);
+          if (searchText) params.set("searchText", searchText);
           if (searchQuery) params.set("searchQuery", searchQuery);
           if (selectedCuisines.length)
             params.set("selectedCuisines", selectedCuisines.join(","));
+          if (city) params.set("city", city);
+          if (priceRange) {
+            params.set("minPrice", String(priceRange[0]));
+            params.set("maxPrice", String(priceRange[1]));
+          }
 
           const response = await axios.get(
             `${API_END_POINT}/search?${params.toString()}`,

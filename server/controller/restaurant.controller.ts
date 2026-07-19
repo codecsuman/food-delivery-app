@@ -17,8 +17,6 @@ export const createRestaurant = async (req: Request, res: Response) => {
     } = req.body;
     const file = req.file;
 
-    // REMOVED: "already exists" check to allow multiple restaurants per user
-
     if (!restaurantName || !city || !country || !deliveryTime || !cuisines) {
       return res.status(400).json({
         success: false,
@@ -267,11 +265,9 @@ export const deleteRestaurant = async (req: Request, res: Response) => {
         .json({ success: false, message: "Restaurant not found" });
     }
 
-    // Delete all associated menus
     const Menu = mongoose.model("Menu");
     await Menu.deleteMany({ restaurant: id });
 
-    // Delete image from Cloudinary
     if (restaurant.imagePublicId) {
       await deleteImage(restaurant.imagePublicId);
     }
@@ -397,7 +393,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= SEARCH RESTAURANTS =======================
+// ======================= SEARCH RESTAURANTS (real-time, with filters) =======================
 export const searchRestaurant = async (req: Request, res: Response) => {
   try {
     const searchText = req.params.searchText || "";
@@ -405,14 +401,19 @@ export const searchRestaurant = async (req: Request, res: Response) => {
     const selectedCuisines = ((req.query.selectedCuisines as string) || "")
       .split(",")
       .filter((c) => c.trim());
+    const city = ((req.query.city as string) || "").trim();
+    const minPrice =
+      req.query.minPrice !== undefined ? Number(req.query.minPrice) : undefined;
+    const maxPrice =
+      req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : undefined;
 
+    const Menu = mongoose.model("Menu");
     const andConditions: any[] = [];
 
     const getMenuMatchingIds = async (
       term: string,
     ): Promise<mongoose.Types.ObjectId[]> => {
       if (!term.trim()) return [];
-      const Menu = mongoose.model("Menu");
       const matchingMenus = await Menu.find({
         name: { $regex: term, $options: "i" },
       }).select("restaurant");
@@ -424,37 +425,76 @@ export const searchRestaurant = async (req: Request, res: Response) => {
         );
     };
 
-    if (searchText) {
+    // Text term (name / city / country / cuisine / menu item name)
+    const term = searchText || searchQuery;
+    if (term) {
       const orConditions: any[] = [
-        { restaurantName: { $regex: searchText, $options: "i" } },
-        { city: { $regex: searchText, $options: "i" } },
-        { country: { $regex: searchText, $options: "i" } },
-        { cuisines: { $regex: searchText, $options: "i" } },
+        { restaurantName: { $regex: term, $options: "i" } },
+        { city: { $regex: term, $options: "i" } },
+        { country: { $regex: term, $options: "i" } },
+        { cuisines: { $regex: term, $options: "i" } },
       ];
-      const menuIds = await getMenuMatchingIds(searchText);
+      const menuIds = await getMenuMatchingIds(term);
       if (menuIds.length > 0) orConditions.push({ _id: { $in: menuIds } });
       andConditions.push({ $or: orConditions });
     }
 
-    if (searchQuery && searchQuery !== searchText) {
-      const orConditions: any[] = [
-        { restaurantName: { $regex: searchQuery, $options: "i" } },
-        { cuisines: { $regex: searchQuery, $options: "i" } },
-      ];
-      const menuIds = await getMenuMatchingIds(searchQuery);
-      if (menuIds.length > 0) orConditions.push({ _id: { $in: menuIds } });
-      andConditions.push({ $or: orConditions });
+    // Explicit location filter (separate from the free-text term)
+    if (city) {
+      andConditions.push({ city: { $regex: city, $options: "i" } });
     }
 
+    // Cuisine / dish chips — case-insensitive match against restaurant.cuisines
+    // OR against menu item names (so "Biryani"/"Burger" work as dish filters too)
     if (selectedCuisines.length > 0) {
-      andConditions.push({ cuisines: { $in: selectedCuisines } });
+      const cuisineRegexes = selectedCuisines.map(
+        (c) => new RegExp(`^${c.trim()}$`, "i"),
+      );
+
+      const dishMenus = await Menu.find({
+        name: { $regex: selectedCuisines.join("|"), $options: "i" },
+      }).select("restaurant");
+      const dishRestaurantIds = dishMenus
+        .map((m: any) => m.restaurant)
+        .filter(
+          (id: any): id is mongoose.Types.ObjectId =>
+            id && mongoose.Types.ObjectId.isValid(id),
+        );
+
+      andConditions.push({
+        $or: [
+          { cuisines: { $in: cuisineRegexes } },
+          { _id: { $in: dishRestaurantIds } },
+        ],
+      });
+    }
+
+    // Price range — match restaurants that have at least one menu item in range
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      const priceFilter: any = {};
+      if (minPrice !== undefined && !Number.isNaN(minPrice))
+        priceFilter.$gte = minPrice;
+      if (maxPrice !== undefined && !Number.isNaN(maxPrice))
+        priceFilter.$lte = maxPrice;
+
+      const menusInRange = await Menu.find({ price: priceFilter }).select(
+        "restaurant",
+      );
+      const restaurantIds = menusInRange
+        .map((m: any) => m.restaurant)
+        .filter(
+          (id: any): id is mongoose.Types.ObjectId =>
+            id && mongoose.Types.ObjectId.isValid(id),
+        );
+      andConditions.push({ _id: { $in: restaurantIds } });
     }
 
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
 
     const restaurants = await Restaurant.find(query)
       .populate({ path: "menus", select: "name description price image" })
-      .select("-imagePublicId");
+      .select("-imagePublicId")
+      .sort({ createdAt: -1 });
 
     return res
       .status(200)

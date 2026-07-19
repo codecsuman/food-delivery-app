@@ -14,61 +14,46 @@ import { Restaurant } from "@/types/restaurantType";
 const SearchPage = () => {
   const params = useParams();
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [city, setCity] = useState<string>("");
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 2000]);
   const {
     loading,
     searchedRestaurant,
     searchRestaurant,
-    getAllRestaurants,  // NEW: fetch all restaurants
     setAppliedFilter,
     appliedFilter,
     resetAppliedFilter,
   } = useRestaurantStore();
 
-  const initialSearchDone = useRef(false);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // FIXED: Handle both /search (browse all) and /search/:text (search term)
+  // Single source of truth: everything (text, query, cuisines, price, city)
+  // flows through searchRestaurant. No-params + no filters returns everything.
   useEffect(() => {
-    // Clear previous debounce
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(() => {
-      if (params.text) {
-        // Search with specific text
-        searchRestaurant(params.text ?? "", searchQuery, appliedFilter);
-      } else {
-        // Browse all restaurants (no search text)
-        getAllRestaurants();
-      }
-      initialSearchDone.current = true;
+      searchRestaurant(
+        params.text ?? "",
+        searchQuery,
+        appliedFilter,
+        priceRange,
+        city,
+      );
     }, 300);
 
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [params.text, appliedFilter, searchQuery, searchRestaurant, getAllRestaurants]);
+  }, [params.text, appliedFilter, searchQuery, priceRange, city, searchRestaurant]);
 
   const handleSearch = () => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-    if (params.text) {
-      searchRestaurant(params.text, searchQuery, appliedFilter);
-    } else {
-      // If no text param but searchQuery exists, navigate to search with query
-      // Or just search with empty text (backend handles it)
-      searchRestaurant("", searchQuery, appliedFilter);
-    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    searchRestaurant(params.text ?? "", searchQuery, appliedFilter, priceRange, city);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
+    if (e.key === "Enter") handleSearch();
   };
 
   const handleRemoveFilter = (filter: string) => {
@@ -78,13 +63,69 @@ const SearchPage = () => {
   const handleClearAllFilters = () => {
     resetAppliedFilter();
     setSearchQuery("");
+    setCity("");
+    setPriceRange([0, 2000]);
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900 py-10 px-4">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between gap-10">
-          <FilterPage />
+          <div className="w-full md:w-72 shrink-0 space-y-6">
+            <FilterPage />
+
+            {/* Location filter */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-4">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Location
+              </label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="e.g. Kolkata"
+                  className="pl-9 h-10 rounded-lg"
+                />
+              </div>
+            </div>
+
+            {/* Price range filter */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-4">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                Price range
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0}
+                  max={2000}
+                  step={50}
+                  value={priceRange[0]}
+                  onChange={(e) =>
+                    setPriceRange([Number(e.target.value), priceRange[1]])
+                  }
+                  className="flex-1"
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={2000}
+                  step={50}
+                  value={priceRange[1]}
+                  onChange={(e) =>
+                    setPriceRange([priceRange[0], Number(e.target.value)])
+                  }
+                  className="flex-1"
+                />
+              </div>
+              <div className="flex justify-between text-xs text-gray-400 mt-1">
+                <span>₹{priceRange[0]}</span>
+                <span>₹{priceRange[1]}</span>
+              </div>
+            </div>
+          </div>
+
           <div className="flex-1">
             {/* Search Input */}
             <div className="flex items-center gap-2 mb-6">
@@ -93,21 +134,14 @@ const SearchPage = () => {
                 <Input
                   type="text"
                   value={searchQuery}
-                  placeholder="Search by restaurant name, city, or cuisine..."
+                  placeholder="Search by restaurant name, city, cuisine, or dish..."
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={handleKeyDown}
                   className="h-12 pl-11 rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm focus-visible:ring-orange-500"
                 />
                 {searchQuery && (
                   <button
-                    onClick={() => {
-                      setSearchQuery("");
-                      if (params.text) {
-                        searchRestaurant(params.text, "", appliedFilter);
-                      } else {
-                        getAllRestaurants();
-                      }
-                    }}
+                    onClick={() => setSearchQuery("")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                   >
                     <X className="w-4 h-4" />
@@ -169,18 +203,10 @@ const SearchPage = () => {
               {loading ? (
                 <SearchPageSkeleton />
               ) : !loading && searchedRestaurant?.data?.length === 0 ? (
-                <NoResultFound 
-                  searchText={params.text || "all restaurants"} 
+                <NoResultFound
+                  searchText={params.text || "all restaurants"}
                   searchQuery={searchQuery}
-                  onClear={() => {
-                    setSearchQuery("");
-                    resetAppliedFilter();
-                    if (params.text) {
-                      searchRestaurant(params.text, "", []);
-                    } else {
-                      getAllRestaurants();
-                    }
-                  }}
+                  onClear={handleClearAllFilters}
                 />
               ) : (
                 searchedRestaurant?.data?.map((restaurant: Restaurant) => (
@@ -204,7 +230,6 @@ const SearchPage = () => {
                           {restaurant.estimatedDeliveryTime || restaurant.deliveryTime || 30} min
                         </span>
                       </div>
-                      {/* Rating badge */}
                       {(restaurant.rating || 0) > 0 && (
                         <div className="absolute top-3 right-3 bg-white/95 dark:bg-gray-900/90 backdrop-blur-sm rounded-full px-2.5 py-1 shadow-sm flex items-center gap-1">
                           <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
@@ -287,7 +312,6 @@ const SearchPage = () => {
 
 export default SearchPage;
 
-// ======================= SKELETON LOADER =======================
 const SearchPageSkeleton = () => {
   return (
     <>
@@ -322,13 +346,12 @@ const SearchPageSkeleton = () => {
   );
 };
 
-// ======================= NO RESULTS =======================
-const NoResultFound = ({ 
-  searchText, 
+const NoResultFound = ({
+  searchText,
   searchQuery,
-  onClear 
-}: { 
-  searchText: string; 
+  onClear,
+}: {
+  searchText: string;
   searchQuery: string;
   onClear: () => void;
 }) => {
@@ -341,14 +364,14 @@ const NoResultFound = ({
         No results found
       </h1>
       <p className="text-gray-500 dark:text-gray-400 mb-2">
-        We couldn't find any results for "{searchText}""
+        We couldn't find any results for "{searchText}"
         {searchQuery && ` with "${searchQuery}"`}.
       </p>
       <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
         Try searching with a different term, or check your spelling.
       </p>
       <div className="flex gap-3">
-        <Button 
+        <Button
           onClick={onClear}
           className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg shadow-md shadow-orange-500/20"
         >
