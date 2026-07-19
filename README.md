@@ -1,3 +1,4 @@
+cat > README.md << 'EOF'
 <div align="center">
 
 # 🍔 Suman Food
@@ -49,6 +50,7 @@
 - [Environment Variables](#-environment-variables)
 - [How to Use](#-how-to-use)
 - [API Reference](#-api-reference)
+- [Roadmap](#-roadmap)
 - [Troubleshooting](#-troubleshooting)
 - [Security](#-security)
 - [Contributing](#-contributing)
@@ -78,7 +80,8 @@
 
 ### 👤 For Customers
 - 🔐 Secure signup, login & email verification
-- 🔎 Search restaurants by name, city, cuisine
+- 🔎 Real-time restaurant search with debounced input
+- 🎛️ Live filters — cuisine, dish/food name, price range & location, pulled straight from the database
 - 🛒 Add to cart & Stripe checkout
 - 📦 Track order status in real time
 - 🌗 Light / Dark mode toggle
@@ -120,7 +123,7 @@
 <details>
 <summary><b>Click to expand full folder structure</b> 📂</summary>
 
-```
+
 food-app/
 ├── server/                   # Backend
 │   ├── index.ts              # Main server file
@@ -133,17 +136,16 @@ food-app/
 │   └── mailtrap/              # Email service
 │
 └── client/                   # Frontend
-    ├── src/
-    │   ├── components/        # UI components
-    │   ├── admin/              # Admin dashboard
-    │   ├── auth/                # Auth pages
-    │   ├── store/               # Zustand stores
-    │   ├── types/                # TypeScript types
-    │   ├── schema/               # Zod validation schemas
-    │   └── layout/                # Layout components
-    ├── vite.config.ts
-    └── tailwind.config.js
-```
+├── src/
+│   ├── components/        # UI components
+│   ├── admin/              # Admin dashboard
+│   ├── auth/                # Auth pages
+│   ├── store/               # Zustand stores
+│   ├── types/                # TypeScript types
+│   ├── schema/               # Zod validation schemas
+│   └── layout/                # Layout components
+├── vite.config.ts
+└── tailwind.config.js
 
 </details>
 
@@ -236,7 +238,7 @@ MAILTRAP_SENDER_EMAIL=your_sender@email.com
 
 **🛍️ Customers**
 1. Sign up for an account
-2. Browse or search restaurants by name/city/cuisine
+2. Browse or search restaurants by name/city/cuisine — filters update live as new cuisines/dishes are added
 3. Add items to cart & check out via Stripe
 4. Track your order status live
 
@@ -271,8 +273,13 @@ MAILTRAP_SENDER_EMAIL=your_sender@email.com
 | POST | `/api/v1/restaurant/` | Create restaurant |
 | GET | `/api/v1/restaurant/` | Get my restaurant |
 | PUT | `/api/v1/restaurant/` | Update restaurant |
-| GET | `/api/v1/restaurant/search/:text` | Search restaurants |
+| GET | `/api/v1/restaurant/my-restaurants` | Get all my restaurants |
+| GET | `/api/v1/restaurant/all` | Get all restaurants (public) |
+| GET | `/api/v1/restaurant/search/:searchText` | Search restaurants (path text) |
+| GET | `/api/v1/restaurant/search` | Search restaurants (query params + filters) |
+| GET | `/api/v1/restaurant/filters` | Get distinct cuisines & dish names for filter UI |
 | GET | `/api/v1/restaurant/:id` | Get single restaurant |
+| DELETE | `/api/v1/restaurant/:id` | Delete restaurant |
 
 </details>
 
@@ -299,6 +306,18 @@ MAILTRAP_SENDER_EMAIL=your_sender@email.com
 | GET | `/api/v1/order/:sessionId` | Get order by session |
 
 </details>
+
+<br/>
+
+## 🗺 Roadmap
+
+Planned features, not yet built:
+
+- [ ] Separate navbar views for restaurant owners (Dashboard/My Restaurants/Orders) vs. regular customers (Home/Explore/Orders)
+- [ ] "Order Now" button on menu items — skip the cart and go straight to checkout for a single item
+- [ ] Cash on Delivery (COD) as a payment option alongside Stripe
+- [ ] Customer reviews — star ratings & comments on restaurants
+- [ ] Success animation on profile update confirmation
 
 <br/>
 
@@ -387,3 +406,7 @@ Distributed under the **ISC License**.
 [![GitHub Stars](https://img.shields.io/github/stars/codecsuman/food-delivery-app?style=for-the-badge&logo=github&color=yellow)](https://github.com/codecsuman/food-delivery-app/stargazers)
 
 </div>
+EOF
+git add README.md
+git commit -m "docs: update README with real-time filters, full API reference, and roadmap"
+git push
