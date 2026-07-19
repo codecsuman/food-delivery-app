@@ -78,4 +78,3 @@ orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ user: 1, status: 1 });
 export const Order = mongoose.model("Order", orderSchema);
-//# sourceMappingURL=order.model.js.map

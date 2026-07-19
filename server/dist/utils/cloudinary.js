@@ -69,4 +69,3 @@ export const getPublicIdFromUrl = (url) => {
     }
 };
 export default cloudinary;
-//# sourceMappingURL=cloudinary.js.map

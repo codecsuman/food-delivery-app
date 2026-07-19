@@ -40,4 +40,3 @@ const connectDB = async () => {
     }
 };
 export default connectDB;
-//# sourceMappingURL=connectDB.js.map

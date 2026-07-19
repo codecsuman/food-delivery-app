@@ -368,4 +368,3 @@ export const getSingleRestaurant = async (req, res) => {
             .json({ success: false, message: "Internal server error" });
     }
 };
-//# sourceMappingURL=restaurant.controller.js.map

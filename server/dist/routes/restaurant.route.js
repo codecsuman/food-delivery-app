@@ -20,4 +20,3 @@ router.get("/search", searchRestaurant);
 // Get single restaurant (public)
 router.get("/:id", getSingleRestaurant);
 export default router;
-//# sourceMappingURL=restaurant.route.js.map

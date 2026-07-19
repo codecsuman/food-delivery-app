@@ -214,4 +214,3 @@ export const getAllMenus = async (req, res) => {
             .json({ success: false, message: "Internal server error" });
     }
 };
-//# sourceMappingURL=menu.controller.js.map

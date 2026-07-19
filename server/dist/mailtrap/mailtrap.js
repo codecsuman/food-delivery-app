@@ -49,4 +49,3 @@ export const sendEmail = async (email) => {
         console.error("❌ Failed to send email:", error.message || error);
     }
 };
-//# sourceMappingURL=mailtrap.js.map

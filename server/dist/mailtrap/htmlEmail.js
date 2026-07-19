@@ -272,4 +272,3 @@ export const generateResetSuccessEmailHtml = () => {
     </html>
     `;
 };
-//# sourceMappingURL=htmlEmail.js.map

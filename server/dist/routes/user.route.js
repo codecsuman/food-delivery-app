@@ -16,4 +16,3 @@ router.get("/check-auth", isAuthenticated, checkAuth);
 router.get("/profile", isAuthenticated, getProfile);
 router.put("/profile/update", isAuthenticated, updateProfile);
 export default router;
-//# sourceMappingURL=user.route.js.map

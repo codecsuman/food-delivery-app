@@ -14,4 +14,3 @@ router.delete("/:id", isAuthenticated, deleteMenu);
 // Get menu by restaurant (public)
 router.get("/restaurant/:restaurantId", getMenuByRestaurant);
 export default router;
-//# sourceMappingURL=menu.route.js.map

@@ -218,4 +218,3 @@ export const getOrderBySessionId = async (req, res) => {
             .json({ success: false, message: "Internal server error" });
     }
 };
-//# sourceMappingURL=order.controller.js.map

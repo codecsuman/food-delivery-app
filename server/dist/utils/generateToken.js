@@ -31,4 +31,3 @@ export const clearToken = (res) => {
         expires: new Date(0),
     });
 };
-//# sourceMappingURL=generateToken.js.map

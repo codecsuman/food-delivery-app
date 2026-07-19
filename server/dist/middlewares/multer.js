@@ -38,4 +38,3 @@ export const handleMulterError = (err, _req, res, next) => {
     next();
 };
 export default upload;
-//# sourceMappingURL=multer.js.map

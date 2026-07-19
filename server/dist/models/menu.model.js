@@ -41,4 +41,3 @@ menuSchema.index({ name: "text", description: "text" });
 menuSchema.index({ price: 1 });
 menuSchema.index({ restaurant: 1 }); // Single index for restaurant lookups
 export const Menu = mongoose.model("Menu", menuSchema);
-//# sourceMappingURL=menu.model.js.map

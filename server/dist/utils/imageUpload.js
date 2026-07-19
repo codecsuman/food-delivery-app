@@ -28,4 +28,3 @@ const uploadImageOnCloudinary = async (file, folder = "food-app") => {
     }
 };
 export default uploadImageOnCloudinary;
-//# sourceMappingURL=imageUpload.js.map

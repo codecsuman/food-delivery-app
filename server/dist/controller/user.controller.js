@@ -347,4 +347,3 @@ export const updateProfile = async (req, res) => {
         });
     }
 };
-//# sourceMappingURL=user.controller.js.map

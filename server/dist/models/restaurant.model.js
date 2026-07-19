@@ -71,4 +71,3 @@ restaurantSchema.index({ city: 1, country: 1 });
 restaurantSchema.index({ deliveryTime: 1 });
 restaurantSchema.index({ createdAt: -1 });
 export const Restaurant = mongoose.model("Restaurant", restaurantSchema);
-//# sourceMappingURL=restaurant.model.js.map

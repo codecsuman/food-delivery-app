@@ -61,4 +61,3 @@ export const isAdmin = (req, res, next) => {
     }
     next();
 };
-//# sourceMappingURL=isAuthenticated.js.map

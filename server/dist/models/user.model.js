@@ -78,4 +78,3 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ resetPasswordToken: 1 });
 userSchema.index({ verificationToken: 1 });
 export const User = mongoose.model("User", userSchema);
-//# sourceMappingURL=user.model.js.map

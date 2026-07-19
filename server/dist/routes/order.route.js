@@ -11,4 +11,3 @@ router.get("/session/:sessionId", isAuthenticated, getOrderBySessionId);
 // Stripe webhook (raw body - must NOT use express.json())
 router.post("/webhook", express.raw({ type: "application/json" }), stripeWebhook);
 export default router;
-//# sourceMappingURL=order.route.js.map
