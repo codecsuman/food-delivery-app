@@ -24,6 +24,8 @@ import {
   Sun,
   User,
   UtensilsCrossed,
+  Store,
+  Home,  // ← FIXED: Added Home import
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import {
@@ -60,6 +62,8 @@ const Navbar = () => {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 sticky top-0 z-50">
@@ -99,8 +103,15 @@ const Navbar = () => {
                 Orders
                 <span className="absolute left-3 right-3 -bottom-0.5 h-0.5 bg-gradient-to-r from-orange-500 to-amber-500 scale-x-0 group-hover:scale-x-100 origin-left transition-transform duration-300 rounded-full" />
               </Link>
+              <Link
+                to="/search"
+                className="relative px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-orange-500 dark:hover:text-orange-400 font-medium text-sm transition-colors group"
+              >
+                Explore
+                <span className="absolute left-3 right-3 -bottom-0.5 h-0.5 bg-gradient-to-r from-orange-500 to-amber-500 scale-x-0 group-hover:scale-x-100 origin-left transition-transform duration-300 rounded-full" />
+              </Link>
 
-              {/* Dashboard always visible for logged-in users */}
+              {/* Dashboard Dropdown */}
               <Menubar className="border-none bg-transparent p-0">
                 <MenubarMenu>
                   <MenubarTrigger className="cursor-pointer px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-orange-500 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 font-medium text-sm data-[state=open]:text-orange-500 data-[state=open]:bg-orange-50 dark:data-[state=open]:bg-orange-500/10 rounded-lg transition-all">
@@ -109,7 +120,7 @@ const Navbar = () => {
                   <MenubarContent className="rounded-xl border-gray-100 dark:border-gray-700 shadow-xl p-1.5">
                     <Link to="/admin/restaurant">
                       <MenubarItem className="cursor-pointer rounded-lg focus:bg-gradient-to-r focus:from-orange-500 focus:to-amber-500 focus:text-white transition-colors">
-                        <UtensilsCrossed className="w-4 h-4 mr-2" />
+                        <Store className="w-4 h-4 mr-2" />
                         Restaurant
                       </MenubarItem>
                     </Link>
@@ -168,9 +179,9 @@ const Navbar = () => {
                 className="relative cursor-pointer h-9 w-9 flex items-center justify-center rounded-lg hover:bg-orange-50 dark:hover:bg-orange-500/10 transition-all duration-300 hover:scale-110 group"
               >
                 <ShoppingCart className="w-5 h-5 text-gray-600 dark:text-gray-300 group-hover:text-orange-500 transition-colors" />
-                {cart.length > 0 && (
+                {cartCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-gradient-to-br from-orange-500 to-amber-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-sm animate-bounce">
-                    {cart.length}
+                    {cartCount}
                   </span>
                 )}
               </Link>
@@ -240,6 +251,8 @@ const MobileNavbar = () => {
       .slice(0, 2);
   };
 
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
   const linkClass =
     "flex items-center gap-4 hover:bg-gradient-to-r hover:from-orange-50 hover:to-amber-50 dark:hover:from-orange-500/10 dark:hover:to-amber-500/10 hover:text-orange-600 dark:hover:text-orange-400 hover:translate-x-1 px-3 py-3 rounded-xl cursor-pointer text-gray-700 dark:text-gray-300 font-medium transition-all duration-200";
 
@@ -290,7 +303,7 @@ const MobileNavbar = () => {
 
         <SheetDescription className="flex-1 space-y-1">
           <Link to="/" className={linkClass}>
-            <User className="w-5 h-5" />
+            <Home className="w-5 h-5" />
             <span>Home</span>
           </Link>
           <Link to="/profile" className={linkClass}>
@@ -301,18 +314,22 @@ const MobileNavbar = () => {
             <HandPlatter className="w-5 h-5" />
             <span>Orders</span>
           </Link>
+          <Link to="/search" className={linkClass}>
+            <Store className="w-5 h-5" />
+            <span>Explore</span>
+          </Link>
           <Link to="/cart" className={linkClass}>
             <ShoppingCart className="w-5 h-5" />
-            <span>Cart ({cart.length})</span>
+            <span>Cart ({cartCount})</span>
           </Link>
 
-          {/* Dashboard links always visible */}
+          {/* Dashboard links */}
           <Separator className="my-3" />
           <p className="px-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">
             Dashboard
           </p>
           <Link to="/admin/restaurant" className={linkClass}>
-            <UtensilsCrossed className="w-5 h-5" />
+            <Store className="w-5 h-5" />
             <span>Restaurant</span>
           </Link>
           <Link to="/admin/menu" className={linkClass}>

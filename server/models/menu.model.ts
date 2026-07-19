@@ -7,6 +7,8 @@ export interface IMenu {
   image: string;
   imagePublicId?: string;
   restaurant: mongoose.Schema.Types.ObjectId;
+  popular?: boolean;
+  orderCount?: number;
 }
 
 export interface IMenuDocument extends IMenu, Document {
@@ -44,11 +46,19 @@ const menuSchema = new mongoose.Schema<IMenuDocument>(
       type: String,
       default: "",
     },
+    popular: {
+      type: Boolean,
+      default: false,
+    },
+    orderCount: {
+      type: Number,
+      default: 0,
+      min: [0, "Order count cannot be negative"],
+    },
     restaurant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Restaurant",
       required: [true, "Restaurant reference is required"],
-      // REMOVED: index: true (we use schema.index() below instead)
     },
   },
   { timestamps: true },
@@ -58,6 +68,8 @@ const menuSchema = new mongoose.Schema<IMenuDocument>(
 menuSchema.index({ name: 1, restaurant: 1 });
 menuSchema.index({ name: "text", description: "text" });
 menuSchema.index({ price: 1 });
-menuSchema.index({ restaurant: 1 }); // Single index for restaurant lookups
+menuSchema.index({ restaurant: 1 });
+menuSchema.index({ popular: 1 });
+menuSchema.index({ orderCount: -1 });
 
 export const Menu = mongoose.model<IMenuDocument>("Menu", menuSchema);

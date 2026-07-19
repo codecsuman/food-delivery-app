@@ -17,13 +17,7 @@ export const createRestaurant = async (req: Request, res: Response) => {
     } = req.body;
     const file = req.file;
 
-    const existing = await Restaurant.findOne({ user: req.id });
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: "Restaurant already exists for this user",
-      });
-    }
+    // REMOVED: "already exists" check to allow multiple restaurants per user
 
     if (!restaurantName || !city || !country || !deliveryTime || !cuisines) {
       return res.status(400).json({
@@ -115,9 +109,50 @@ export const getRestaurant = async (req: Request, res: Response) => {
   }
 };
 
+// ======================= GET USER'S RESTAURANTS (multiple) =======================
+export const getUserRestaurants = async (req: Request, res: Response) => {
+  try {
+    const restaurants = await Restaurant.find({ user: req.id })
+      .populate("menus")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: restaurants.length,
+      restaurants,
+    });
+  } catch (error) {
+    console.error("Get user restaurants error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ======================= GET ALL RESTAURANTS (public) =======================
+export const getAllRestaurants = async (_req: Request, res: Response) => {
+  try {
+    const restaurants = await Restaurant.find()
+      .populate("menus")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: restaurants.length,
+      data: restaurants,
+    });
+  } catch (error) {
+    console.error("Get all restaurants error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
 // ======================= UPDATE RESTAURANT =======================
 export const updateRestaurant = async (req: Request, res: Response) => {
   try {
+    const { id } = req.params;
     const {
       restaurantName,
       city,
@@ -128,7 +163,10 @@ export const updateRestaurant = async (req: Request, res: Response) => {
     } = req.body;
     const file = req.file;
 
-    const restaurant = await Restaurant.findOne({ user: req.id });
+    const restaurant = id
+      ? await Restaurant.findOne({ _id: id, user: req.id })
+      : await Restaurant.findOne({ user: req.id });
+
     if (!restaurant) {
       return res.status(404).json({
         success: false,
@@ -211,15 +249,55 @@ export const updateRestaurant = async (req: Request, res: Response) => {
   }
 };
 
+// ======================= DELETE RESTAURANT =======================
+export const deleteRestaurant = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid restaurant ID" });
+    }
+
+    const restaurant = await Restaurant.findOne({ _id: id, user: req.id });
+    if (!restaurant) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Restaurant not found" });
+    }
+
+    // Delete all associated menus
+    const Menu = mongoose.model("Menu");
+    await Menu.deleteMany({ restaurant: id });
+
+    // Delete image from Cloudinary
+    if (restaurant.imagePublicId) {
+      await deleteImage(restaurant.imagePublicId);
+    }
+
+    await Restaurant.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Restaurant deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete restaurant error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
 // ======================= GET RESTAURANT ORDERS =======================
 export const getRestaurantOrder = async (req: Request, res: Response) => {
   try {
     const restaurant = await Restaurant.findOne({ user: req.id });
     if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "Restaurant not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Restaurant not found" });
     }
 
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -269,6 +347,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       "preparing",
       "outfordelivery",
       "delivered",
+      "cancelled",
     ];
     if (!allowedStatuses.includes(status.toLowerCase())) {
       return res.status(400).json({
@@ -279,18 +358,16 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     }
 
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid order ID",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid order ID" });
     }
 
     const order = await Order.findById(orderId);
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
     }
 
     const restaurant = await Restaurant.findOne({ user: req.id });
@@ -327,21 +404,18 @@ export const searchRestaurant = async (req: Request, res: Response) => {
     const searchQuery = (req.query.searchQuery as string) || "";
     const selectedCuisines = ((req.query.selectedCuisines as string) || "")
       .split(",")
-      .filter((cuisine) => cuisine.trim());
+      .filter((c) => c.trim());
 
     const andConditions: any[] = [];
-    const searchedTerms = new Set<string>();
 
     const getMenuMatchingIds = async (
       term: string,
     ): Promise<mongoose.Types.ObjectId[]> => {
       if (!term.trim()) return [];
-
       const Menu = mongoose.model("Menu");
       const matchingMenus = await Menu.find({
         name: { $regex: term, $options: "i" },
       }).select("restaurant");
-
       return matchingMenus
         .map((menu: any) => menu.restaurant)
         .filter(
@@ -351,19 +425,14 @@ export const searchRestaurant = async (req: Request, res: Response) => {
     };
 
     if (searchText) {
-      searchedTerms.add(searchText);
       const orConditions: any[] = [
         { restaurantName: { $regex: searchText, $options: "i" } },
         { city: { $regex: searchText, $options: "i" } },
         { country: { $regex: searchText, $options: "i" } },
         { cuisines: { $regex: searchText, $options: "i" } },
       ];
-
       const menuIds = await getMenuMatchingIds(searchText);
-      if (menuIds.length > 0) {
-        orConditions.push({ _id: { $in: menuIds } });
-      }
-
+      if (menuIds.length > 0) orConditions.push({ _id: { $in: menuIds } });
       andConditions.push({ $or: orConditions });
     }
 
@@ -372,12 +441,8 @@ export const searchRestaurant = async (req: Request, res: Response) => {
         { restaurantName: { $regex: searchQuery, $options: "i" } },
         { cuisines: { $regex: searchQuery, $options: "i" } },
       ];
-
       const menuIds = await getMenuMatchingIds(searchQuery);
-      if (menuIds.length > 0) {
-        orConditions.push({ _id: { $in: menuIds } });
-      }
-
+      if (menuIds.length > 0) orConditions.push({ _id: { $in: menuIds } });
       andConditions.push({ $or: orConditions });
     }
 
@@ -388,17 +453,12 @@ export const searchRestaurant = async (req: Request, res: Response) => {
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
 
     const restaurants = await Restaurant.find(query)
-      .populate({
-        path: "menus",
-        select: "name description price image",
-      })
+      .populate({ path: "menus", select: "name description price image" })
       .select("-imagePublicId");
 
-    return res.status(200).json({
-      success: true,
-      count: restaurants.length,
-      data: restaurants,
-    });
+    return res
+      .status(200)
+      .json({ success: true, count: restaurants.length, data: restaurants });
   } catch (error) {
     console.error("Search restaurant error:", error);
     return res
@@ -413,10 +473,9 @@ export const getSingleRestaurant = async (req: Request, res: Response) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid restaurant ID",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid restaurant ID" });
     }
 
     const restaurant = await Restaurant.findById(id).populate({
@@ -425,16 +484,12 @@ export const getSingleRestaurant = async (req: Request, res: Response) => {
     });
 
     if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "Restaurant not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Restaurant not found" });
     }
 
-    return res.status(200).json({
-      success: true,
-      restaurant,
-    });
+    return res.status(200).json({ success: true, restaurant });
   } catch (error) {
     console.error("Get single restaurant error:", error);
     return res

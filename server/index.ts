@@ -33,6 +33,7 @@ import userRoute from "./routes/user.route.js";
 import restaurantRoute from "./routes/restaurant.route.js";
 import menuRoute from "./routes/menu.route.js";
 import orderRoute from "./routes/order.route.js";
+import reviewRoute from "./routes/review.route.js"; // NEW
 import bodyParser from "body-parser";
 import { stripeWebhook } from "./controller/order.controller.js";
 
@@ -77,6 +78,7 @@ app.use("/api/v1/user", userRoute);
 app.use("/api/v1/restaurant", restaurantRoute);
 app.use("/api/v1/menu", menuRoute);
 app.use("/api/v1/order", orderRoute);
+app.use("/api/v1/review", reviewRoute); // NEW
 
 // =========================
 // HEALTH CHECK
@@ -90,10 +92,9 @@ app.get("/health", (_req: Request, res: Response) => {
 // =========================
 app.use((err: any, _req: Request, res: Response, _next: any) => {
   console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: err.message || "Internal Server Error",
-  });
+  res
+    .status(500)
+    .json({ success: false, message: err.message || "Internal Server Error" });
 });
 
 // =========================

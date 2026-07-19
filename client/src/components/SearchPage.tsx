@@ -4,7 +4,7 @@ import { Input } from "./ui/input";
 import { useEffect, useState, useRef } from "react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Globe, MapPin, Search, SearchX, X } from "lucide-react";
+import { Globe, MapPin, Search, SearchX, X, Star } from "lucide-react";
 import { Card, CardContent, CardFooter } from "./ui/card";
 import { AspectRatio } from "./ui/aspect-ratio";
 import { Skeleton } from "./ui/skeleton";
@@ -18,47 +18,50 @@ const SearchPage = () => {
     loading,
     searchedRestaurant,
     searchRestaurant,
+    getAllRestaurants,  // NEW: fetch all restaurants
     setAppliedFilter,
     appliedFilter,
     resetAppliedFilter,
   } = useRestaurantStore();
 
-  // Track if initial search has been done
   const initialSearchDone = useRef(false);
-
-  // Stable debounce ref
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Trigger search when params.text, appliedFilter, OR searchQuery changes
+  // FIXED: Handle both /search (browse all) and /search/:text (search term)
   useEffect(() => {
-    if (params.text) {
-      // Clear previous debounce
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-
-      // Debounce the search to avoid too many API calls
-      debounceRef.current = setTimeout(() => {
-       searchRestaurant(params.text ?? "", searchQuery, appliedFilter);
-        initialSearchDone.current = true;
-      }, 300);
-
-      return () => {
-        if (debounceRef.current) {
-          clearTimeout(debounceRef.current);
-        }
-      };
+    // Clear previous debounce
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
     }
-  }, [params.text, appliedFilter, searchQuery, searchRestaurant]);
 
-  // Handle search button click with immediate search
-  const handleSearch = () => {
-    if (params.text) {
-      // Clear any pending debounce
+    debounceRef.current = setTimeout(() => {
+      if (params.text) {
+        // Search with specific text
+        searchRestaurant(params.text ?? "", searchQuery, appliedFilter);
+      } else {
+        // Browse all restaurants (no search text)
+        getAllRestaurants();
+      }
+      initialSearchDone.current = true;
+    }, 300);
+
+    return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
+    };
+  }, [params.text, appliedFilter, searchQuery, searchRestaurant, getAllRestaurants]);
+
+  const handleSearch = () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    if (params.text) {
       searchRestaurant(params.text, searchQuery, appliedFilter);
+    } else {
+      // If no text param but searchQuery exists, navigate to search with query
+      // Or just search with empty text (backend handles it)
+      searchRestaurant("", searchQuery, appliedFilter);
     }
   };
 
@@ -74,7 +77,6 @@ const SearchPage = () => {
 
   const handleClearAllFilters = () => {
     resetAppliedFilter();
-    // Also clear search query and re-search
     setSearchQuery("");
   };
 
@@ -96,13 +98,14 @@ const SearchPage = () => {
                   onKeyDown={handleKeyDown}
                   className="h-12 pl-11 rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm focus-visible:ring-orange-500"
                 />
-                {/* Show clear button when searchQuery has text */}
                 {searchQuery && (
                   <button
                     onClick={() => {
                       setSearchQuery("");
                       if (params.text) {
                         searchRestaurant(params.text, "", appliedFilter);
+                      } else {
+                        getAllRestaurants();
                       }
                     }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
@@ -133,18 +136,14 @@ const SearchPage = () => {
             {/* Results Header */}
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-3 mb-6">
               <h1 className="font-semibold text-lg text-gray-900 dark:text-white">
-                {searchedRestaurant?.data?.length || 0} Search Results Found
+                {searchedRestaurant?.data?.length || 0} {params.text ? "Search Results" : "Restaurants"} Found
               </h1>
 
-              {/* Active Filters */}
               {appliedFilter.length > 0 && (
                 <div className="flex flex-wrap gap-2 items-center">
                   <span className="text-sm text-gray-400 dark:text-gray-500">Filters:</span>
                   {appliedFilter.map((selectedFilter: string) => (
-                    <div
-                      key={selectedFilter}
-                      className="relative inline-flex items-center max-w-full"
-                    >
+                    <div key={selectedFilter} className="relative inline-flex items-center max-w-full">
                       <Badge className="text-white bg-gradient-to-r from-orange-500 to-amber-500 border-none rounded-full hover:cursor-pointer pr-7 pl-3 py-1 whitespace-nowrap">
                         {selectedFilter}
                       </Badge>
@@ -171,13 +170,15 @@ const SearchPage = () => {
                 <SearchPageSkeleton />
               ) : !loading && searchedRestaurant?.data?.length === 0 ? (
                 <NoResultFound 
-                  searchText={params.text || ""} 
+                  searchText={params.text || "all restaurants"} 
                   searchQuery={searchQuery}
                   onClear={() => {
                     setSearchQuery("");
                     resetAppliedFilter();
                     if (params.text) {
                       searchRestaurant(params.text, "", []);
+                    } else {
+                      getAllRestaurants();
                     }
                   }}
                 />
@@ -194,6 +195,7 @@ const SearchPage = () => {
                           alt={restaurant.restaurantName}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           loading="lazy"
+                          onError={(e) => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/400x300?text=No+Image"; }}
                         />
                       </AspectRatio>
                       <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -202,6 +204,13 @@ const SearchPage = () => {
                           {restaurant.estimatedDeliveryTime || restaurant.deliveryTime || 30} min
                         </span>
                       </div>
+                      {/* Rating badge */}
+                      {(restaurant.rating || 0) > 0 && (
+                        <div className="absolute top-3 right-3 bg-white/95 dark:bg-gray-900/90 backdrop-blur-sm rounded-full px-2.5 py-1 shadow-sm flex items-center gap-1">
+                          <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{restaurant.rating}</span>
+                        </div>
+                      )}
                     </div>
 
                     <CardContent className="p-4">
@@ -212,33 +221,23 @@ const SearchPage = () => {
                       <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 mb-1">
                         <MapPin size={13} className="text-gray-400 shrink-0" />
                         <p className="text-sm truncate">
-                          <span className="font-medium text-gray-700 dark:text-gray-300">
-                            {restaurant.city}
-                          </span>
-                          , {restaurant.country}
+                          <span className="font-medium text-gray-700 dark:text-gray-300">{restaurant.city}</span>, {restaurant.country}
                         </p>
                       </div>
 
                       <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 mb-3">
                         <Globe size={13} className="text-gray-400 shrink-0" />
                         <p className="text-sm">
-                          Delivery:{" "}
-                          <span className="font-medium text-gray-700 dark:text-gray-300">
-                            ₹{restaurant.deliveryPrice || 0}
-                          </span>
+                          Delivery: <span className="font-medium text-gray-700 dark:text-gray-300">₹{restaurant.deliveryPrice || 0}</span>
                         </p>
                       </div>
 
-                      {/* Show menus if available (for search by menu name) */}
                       {restaurant.menus && restaurant.menus.length > 0 && (
                         <div className="mb-3">
                           <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Popular items:</p>
                           <div className="flex gap-1.5 flex-wrap">
                             {restaurant.menus.slice(0, 3).map((menu: any) => (
-                              <Badge
-                                key={menu._id}
-                                className="bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 font-medium px-2 py-0.5 rounded-full text-xs border-none"
-                              >
+                              <Badge key={menu._id} className="bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 font-medium px-2 py-0.5 rounded-full text-xs border-none">
                                 {menu.name}
                               </Badge>
                             ))}
@@ -253,10 +252,7 @@ const SearchPage = () => {
 
                       <div className="flex gap-1.5 flex-wrap">
                         {restaurant.cuisines.slice(0, 3).map((cuisine: string) => (
-                          <Badge
-                            key={cuisine}
-                            className="bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium px-2.5 py-1 rounded-full text-xs border-none"
-                          >
+                          <Badge key={cuisine} className="bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium px-2.5 py-1 rounded-full text-xs border-none">
                             {cuisine}
                           </Badge>
                         ))}
@@ -292,15 +288,11 @@ const SearchPage = () => {
 export default SearchPage;
 
 // ======================= SKELETON LOADER =======================
-
 const SearchPageSkeleton = () => {
   return (
     <>
       {[...Array(6)].map((_, index) => (
-        <Card
-          key={index}
-          className="bg-white dark:bg-gray-800 shadow-sm rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-700 p-0"
-        >
+        <Card key={index} className="bg-white dark:bg-gray-800 shadow-sm rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-700 p-0">
           <div className="relative">
             <AspectRatio ratio={16 / 9}>
               <Skeleton className="w-full h-full" />
@@ -331,7 +323,6 @@ const SearchPageSkeleton = () => {
 };
 
 // ======================= NO RESULTS =======================
-
 const NoResultFound = ({ 
   searchText, 
   searchQuery,
@@ -350,7 +341,7 @@ const NoResultFound = ({
         No results found
       </h1>
       <p className="text-gray-500 dark:text-gray-400 mb-2">
-        We couldn't find any results for "{searchText}"
+        We couldn't find any results for "{searchText}""
         {searchQuery && ` with "${searchQuery}"`}.
       </p>
       <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
@@ -364,10 +355,7 @@ const NoResultFound = ({
           Clear Filters & Search
         </Button>
         <Link to="/">
-          <Button 
-            variant="outline"
-            className="rounded-lg border-gray-200 dark:border-gray-600"
-          >
+          <Button variant="outline" className="rounded-lg border-gray-200 dark:border-gray-600">
             Go Back to Home
           </Button>
         </Link>

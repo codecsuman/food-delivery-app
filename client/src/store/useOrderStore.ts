@@ -1,4 +1,3 @@
-// FIXED useOrderStore.ts
 import { CheckoutSessionRequest, OrderState } from "@/types/orderType";
 import axios from "axios";
 import { toast } from "sonner";
@@ -24,23 +23,26 @@ export const useOrderStore = create<OrderState>()(
 
       createCheckoutSession: async (
         checkoutSession: CheckoutSessionRequest,
+        paymentMethod: "stripe" | "cod" = "stripe",
       ) => {
         try {
           set({ loading: true });
           const response = await axios.post(
             `${API_END_POINT}/checkout/create-checkout-session`,
-            checkoutSession,
-            {
-              headers: {
-                "Content-Type": "application/json",
-              },
-            },
+            { ...checkoutSession, paymentMethod },
+            { headers: { "Content-Type": "application/json" } },
           );
 
-          if (response.data.success && response.data.session?.url) {
-            // FIXED: Clear cart after successful checkout session creation
-            // This is handled by the success page after redirect
-            window.location.href = response.data.session.url;
+          if (response.data.success) {
+            if (response.data.paymentMethod === "cod") {
+              toast.success(response.data.message);
+              set((state) => ({
+                orders: [response.data.order, ...state.orders],
+              }));
+              window.location.href = `/order/success?order_id=${response.data.order._id}`;
+            } else if (response.data.session?.url) {
+              window.location.href = response.data.session.url;
+            }
           } else {
             toast.error("Failed to create checkout session");
           }
@@ -51,7 +53,6 @@ export const useOrderStore = create<OrderState>()(
         }
       },
 
-      // FIXED: Get order details with better error handling
       getOrderDetails: async () => {
         try {
           set({ loading: true });
@@ -62,7 +63,6 @@ export const useOrderStore = create<OrderState>()(
             set({ orders: [] });
           }
         } catch (error: any) {
-          // FIXED: Handle 404 as empty orders, not error
           if (error?.response?.status === 404) {
             set({ orders: [] });
           } else {
@@ -73,7 +73,6 @@ export const useOrderStore = create<OrderState>()(
         }
       },
 
-      // FIXED: Get order by session ID with better handling
       getOrderBySessionId: async (sessionId: string) => {
         try {
           set({ loading: true });
@@ -81,13 +80,10 @@ export const useOrderStore = create<OrderState>()(
             `${API_END_POINT}/session/${sessionId}`,
           );
           if (response.data.success) {
-            // FIXED: Also add to orders list if not present
             const order = response.data.order;
             set((state) => {
               const exists = state.orders.some((o) => o._id === order._id);
-              if (!exists) {
-                return { orders: [order, ...state.orders] };
-              }
+              if (!exists) return { orders: [order, ...state.orders] };
               return state;
             });
             return order;
@@ -101,7 +97,22 @@ export const useOrderStore = create<OrderState>()(
         }
       },
 
-      // FIXED: Poll for order status updates (real-time simulation)
+      getOrderById: async (orderId: string) => {
+        try {
+          set({ loading: true });
+          const response = await axios.get(`${API_END_POINT}/${orderId}`);
+          if (response.data.success) {
+            return response.data.order;
+          }
+          return null;
+        } catch (error: any) {
+          toast.error(getErrorMessage(error));
+          return null;
+        } finally {
+          set({ loading: false });
+        }
+      },
+
       pollOrderStatus: async (orderId: string, _interval: number = 5000) => {
         const poll = async () => {
           try {
@@ -120,12 +131,9 @@ export const useOrderStore = create<OrderState>()(
           }
           return null;
         };
-
-        // Initial poll
         return await poll();
       },
 
-      // FIXED: Cancel order
       cancelOrder: async (orderId: string) => {
         try {
           set({ loading: true });
@@ -150,7 +158,6 @@ export const useOrderStore = create<OrderState>()(
     {
       name: "order-store",
       storage: createJSONStorage(() => localStorage),
-      // FIXED: Don't persist orders - always fetch fresh
       partialize: (_state) => ({}),
     },
   ),

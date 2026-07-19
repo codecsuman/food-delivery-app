@@ -61,6 +61,7 @@ const orderSchema = new mongoose.Schema({
                 "outfordelivery",
                 "delivered",
                 "payment_failed",
+                "cancelled",
             ],
             message: "Status {VALUE} is not valid",
         },
@@ -71,10 +72,19 @@ const orderSchema = new mongoose.Schema({
         type: String,
         default: "",
     },
+    paymentMethod: {
+        type: String,
+        enum: {
+            values: ["stripe", "cod"],
+            message: "Payment method {VALUE} is not valid",
+        },
+        default: "stripe",
+    },
 }, { timestamps: true });
 orderSchema.index({ user: 1 });
 orderSchema.index({ restaurant: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ user: 1, status: 1 });
+orderSchema.index({ paymentMethod: 1 });
 export const Order = mongoose.model("Order", orderSchema);

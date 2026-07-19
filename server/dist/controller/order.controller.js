@@ -1,6 +1,7 @@
 import { Restaurant } from "../models/restaurant.model.js";
 import { Order } from "../models/order.model.js";
 import Stripe from "stripe";
+import mongoose from "mongoose";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // ======================= GET ORDERS (for user) =======================
 export const getOrders = async (req, res) => {
@@ -9,14 +10,43 @@ export const getOrders = async (req, res) => {
             .populate("restaurant", "restaurantName imageUrl")
             .populate("user", "fullname email")
             .sort({ createdAt: -1 });
-        return res.status(200).json({
-            success: true,
-            count: orders.length,
-            orders,
-        });
+        return res
+            .status(200)
+            .json({ success: true, count: orders.length, orders });
     }
     catch (error) {
         console.error("Get orders error:", error);
+        return res
+            .status(500)
+            .json({ success: false, message: "Internal server error" });
+    }
+};
+// ======================= GET ORDER BY ID =======================
+export const getOrderById = async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res
+                .status(400)
+                .json({ success: false, message: "Invalid order ID" });
+        }
+        const order = await Order.findById(orderId)
+            .populate("restaurant", "restaurantName imageUrl")
+            .populate("user", "fullname email");
+        if (!order) {
+            return res
+                .status(404)
+                .json({ success: false, message: "Order not found" });
+        }
+        if (order.user.toString() !== req.id) {
+            return res
+                .status(403)
+                .json({ success: false, message: "Not authorized" });
+        }
+        return res.status(200).json({ success: true, order });
+    }
+    catch (error) {
+        console.error("Get order by id error:", error);
         return res
             .status(500)
             .json({ success: false, message: "Internal server error" });
@@ -27,32 +57,52 @@ export const createCheckoutSession = async (req, res) => {
     try {
         const checkoutSessionRequest = req.body;
         if (!checkoutSessionRequest.cartItems?.length) {
-            return res.status(400).json({
-                success: false,
-                message: "Cart items are required",
-            });
+            return res
+                .status(400)
+                .json({ success: false, message: "Cart items are required" });
         }
         if (!checkoutSessionRequest.deliveryDetails) {
-            return res.status(400).json({
-                success: false,
-                message: "Delivery details are required",
-            });
+            return res
+                .status(400)
+                .json({ success: false, message: "Delivery details are required" });
         }
         if (!checkoutSessionRequest.restaurantId) {
-            return res.status(400).json({
-                success: false,
-                message: "Restaurant ID is required",
-            });
+            return res
+                .status(400)
+                .json({ success: false, message: "Restaurant ID is required" });
         }
         const restaurant = await Restaurant.findById(checkoutSessionRequest.restaurantId).populate("menus");
         if (!restaurant) {
-            return res.status(404).json({
-                success: false,
-                message: "Restaurant not found",
-            });
+            return res
+                .status(404)
+                .json({ success: false, message: "Restaurant not found" });
         }
         const totalAmount = checkoutSessionRequest.cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        // Create order with proper restaurant reference
+        const paymentMethod = req.body.paymentMethod || "stripe";
+        // ========== CASH ON DELIVERY ==========
+        if (paymentMethod === "cod") {
+            const order = await Order.create({
+                restaurant: restaurant._id,
+                user: req.id,
+                deliveryDetails: checkoutSessionRequest.deliveryDetails,
+                cartItems: checkoutSessionRequest.cartItems,
+                totalAmount,
+                status: "confirmed",
+                paymentMethod: "cod",
+            });
+            // Increment orderCount for each menu item
+            const Menu = mongoose.model("Menu");
+            for (const item of checkoutSessionRequest.cartItems) {
+                await Menu.findByIdAndUpdate(item.menuId, { $inc: { orderCount: 1 } });
+            }
+            return res.status(200).json({
+                success: true,
+                message: "Order placed successfully with Cash on Delivery",
+                order,
+                paymentMethod: "cod",
+            });
+        }
+        // ========== STRIPE PAYMENT ==========
         const order = await Order.create({
             restaurant: restaurant._id,
             user: req.id,
@@ -60,15 +110,14 @@ export const createCheckoutSession = async (req, res) => {
             cartItems: checkoutSessionRequest.cartItems,
             totalAmount,
             status: "pending",
+            paymentMethod: "stripe",
         });
         const lineItems = createLineItems(checkoutSessionRequest, restaurant.menus);
         if (restaurant.deliveryPrice > 0) {
             lineItems.push({
                 price_data: {
                     currency: "inr",
-                    product_data: {
-                        name: "Delivery Fee",
-                    },
+                    product_data: { name: "Delivery Fee" },
                     unit_amount: Math.round(restaurant.deliveryPrice * 100),
                 },
                 quantity: 1,
@@ -96,11 +145,7 @@ export const createCheckoutSession = async (req, res) => {
         }
         order.paymentIntentId = session.id;
         await order.save();
-        return res.status(200).json({
-            success: true,
-            session,
-            orderId: order._id,
-        });
+        return res.status(200).json({ success: true, session, orderId: order._id });
     }
     catch (error) {
         console.error("Create checkout session error:", error);
@@ -138,7 +183,12 @@ export const stripeWebhook = async (req, res) => {
             order.status = "confirmed";
             order.paymentIntentId = session.payment_intent;
             await order.save();
-            console.log(`✅ Order ${order._id} confirmed via webhook`);
+            // Increment orderCount for each menu item
+            const Menu = mongoose.model("Menu");
+            for (const item of order.cartItems) {
+                await Menu.findByIdAndUpdate(item.menuId, { $inc: { orderCount: 1 } });
+            }
+            console.log(`Order ${order._id} confirmed via webhook`);
         }
         catch (error) {
             console.error("Error handling webhook event:", error);
@@ -152,7 +202,7 @@ export const stripeWebhook = async (req, res) => {
             if (order) {
                 order.status = "payment_failed";
                 await order.save();
-                console.log(`❌ Order ${order._id} payment failed`);
+                console.log(`Order ${order._id} payment failed`);
             }
         }
         catch (error) {
@@ -168,9 +218,7 @@ export const createLineItems = (checkoutSessionRequest, menuItems) => {
         if (!menuItem) {
             throw new Error(`Menu item ${cartItem.menuId} not found`);
         }
-        const productData = {
-            name: menuItem.name,
-        };
+        const productData = { name: menuItem.name };
         if (menuItem.image) {
             productData.images = [menuItem.image];
         }
@@ -191,25 +239,19 @@ export const getOrderBySessionId = async (req, res) => {
         const { sessionId } = req.params;
         const session = await stripe.checkout.sessions.retrieve(sessionId);
         if (!session.metadata?.orderId) {
-            return res.status(404).json({
-                success: false,
-                message: "Order not found for this session",
-            });
+            return res
+                .status(404)
+                .json({ success: false, message: "Order not found for this session" });
         }
         const order = await Order.findById(session.metadata.orderId)
             .populate("restaurant", "restaurantName imageUrl")
             .populate("user", "fullname email");
         if (!order) {
-            return res.status(404).json({
-                success: false,
-                message: "Order not found",
-            });
+            return res
+                .status(404)
+                .json({ success: false, message: "Order not found" });
         }
-        return res.status(200).json({
-            success: true,
-            order,
-            session,
-        });
+        return res.status(200).json({ success: true, order, session });
     }
     catch (error) {
         console.error("Get order by session error:", error);

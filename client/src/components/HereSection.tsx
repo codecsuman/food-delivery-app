@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Input } from "./ui/input";
-import { Search, Sparkles, Star, Clock3 } from "lucide-react";
+import { Search, Sparkles, Star, Clock3, Compass } from "lucide-react";
 import { Button } from "./ui/button";
 import HereImage from "@/assets/hero_pizza.png";
 import { useNavigate } from "react-router-dom";
@@ -16,19 +16,15 @@ const HereSection = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
+    if (e.key === "Enter") handleSearch();
   };
 
   return (
     <div className="relative overflow-hidden bg-gradient-to-b from-orange-50/70 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900">
-      {/* Decorative background blobs */}
       <div className="pointer-events-none absolute -top-24 -right-24 w-96 h-96 bg-orange-200/40 dark:bg-orange-500/10 rounded-full blur-3xl" />
       <div className="pointer-events-none absolute -bottom-32 -left-32 w-96 h-96 bg-amber-200/30 dark:bg-amber-500/10 rounded-full blur-3xl" />
 
       <div className="relative min-h-[80vh] flex flex-col md:flex-row max-w-7xl mx-auto px-4 md:px-10 py-10 md:py-20 items-center justify-center gap-10 md:gap-20">
-        {/* Left Content */}
         <div className="flex flex-col gap-8 md:w-[45%] w-full">
           <div className="flex flex-col gap-5">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 rounded-full text-sm font-medium w-fit">
@@ -66,6 +62,15 @@ const HereSection = () => {
               className="h-14 px-8 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold text-lg shadow-lg shadow-orange-500/25 disabled:opacity-50 disabled:shadow-none"
             >
               Search
+            </Button>
+            {/* Browse All Restaurants button */}
+            <Button
+              onClick={() => navigate("/search")}
+              variant="outline"
+              className="h-14 px-5 rounded-xl border-gray-200 dark:border-gray-700 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-600 dark:hover:text-orange-400 hover:border-orange-300 transition-all"
+              title="Browse all restaurants"
+            >
+              <Compass className="w-5 h-5" />
             </Button>
           </div>
 
@@ -109,14 +114,9 @@ const HereSection = () => {
           </div>
         </div>
 
-        {/* Right Image */}
         <div className="md:w-[50%] w-full flex items-center justify-center relative">
           <div className="absolute w-72 h-72 bg-gradient-to-br from-orange-300/40 to-amber-300/30 dark:from-orange-500/10 dark:to-amber-500/10 rounded-full blur-2xl" />
-          <img
-            src={HereImage}
-            alt="Delicious food"
-            className="relative object-contain w-full max-h-[500px] rounded-2xl drop-shadow-2xl"
-          />
+          <img src={HereImage} alt="Delicious food" className="relative object-contain w-full max-h-[500px] rounded-2xl drop-shadow-2xl" />
         </div>
       </div>
     </div>

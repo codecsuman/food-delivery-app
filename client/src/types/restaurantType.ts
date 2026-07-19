@@ -6,8 +6,10 @@ export type MenuItem = {
   description: string;
   price: number;
   image: string;
-  restaurant?: string; // Added — links to restaurant
-  imagePublicId?: string; // Added — for Cloudinary cleanup
+  restaurant?: string;
+  imagePublicId?: string;
+  popular?: boolean;
+  orderCount?: number;
 };
 
 export type Restaurant = {
@@ -17,22 +19,25 @@ export type Restaurant = {
   city: string;
   country: string;
   deliveryTime: number;
-  deliveryPrice: number; // Added — for checkout total
-  estimatedDeliveryTime?: number; // Added — for display
+  deliveryPrice: number;
+  estimatedDeliveryTime?: number;
   cuisines: string[];
   menus: MenuItem[];
   imageUrl: string;
-  imagePublicId?: string; // Added — for Cloudinary cleanup
+  imagePublicId?: string;
+  rating?: number;
+  ratingCount?: number;
 };
 
 export type SearchedRestaurant = {
   data: Restaurant[];
-  count?: number; // Added — for pagination
+  count?: number;
 };
 
 export type RestaurantState = {
   loading: boolean;
   restaurant: Restaurant | null;
+  restaurants: Restaurant[];
   searchedRestaurant: SearchedRestaurant | null;
   appliedFilter: string[];
   singleRestaurant: Restaurant | null;
@@ -47,10 +52,13 @@ export type RestaurantState = {
   ) => Promise<void>;
   addMenuToRestaurant: (menu: MenuItem) => void;
   updateMenuToRestaurant: (menu: MenuItem) => void;
-  removeMenuFromRestaurant: (menuId: string) => void; // Added
+  removeMenuFromRestaurant: (menuId: string) => void;
   setAppliedFilter: (value: string) => void;
   resetAppliedFilter: () => void;
   getSingleRestaurant: (restaurantId: string) => Promise<void>;
   getRestaurantOrders: () => Promise<void>;
   updateRestaurantOrder: (orderId: string, status: string) => Promise<void>;
+  getUserRestaurants: () => Promise<void>;
+  getAllRestaurants: () => Promise<void>;
+  deleteRestaurant: (id: string) => Promise<boolean>;
 };

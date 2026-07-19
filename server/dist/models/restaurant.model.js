@@ -4,7 +4,7 @@ const restaurantSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: [true, "User reference is required"],
-        unique: true, // This automatically creates an index - NO need for index: true
+        index: true, // Keep index for performance, remove unique constraint
     },
     restaurantName: {
         type: String,
@@ -58,6 +58,17 @@ const restaurantSchema = new mongoose.Schema({
         type: String,
         default: "",
     },
+    rating: {
+        type: Number,
+        default: 0,
+        min: [0, "Rating cannot be negative"],
+        max: [5, "Rating cannot exceed 5"],
+    },
+    ratingCount: {
+        type: Number,
+        default: 0,
+        min: [0, "Rating count cannot be negative"],
+    },
 }, { timestamps: true });
 // Text index for search
 restaurantSchema.index({
@@ -65,7 +76,7 @@ restaurantSchema.index({
     city: "text",
     country: "text",
 });
-// Compound and single indexes (user index is already created by unique: true above)
+// Compound and single indexes
 restaurantSchema.index({ cuisines: 1 });
 restaurantSchema.index({ city: 1, country: 1 });
 restaurantSchema.index({ deliveryTime: 1 });

@@ -17,7 +17,7 @@ import Orders from "./admin/Orders";
 import Success from "./components/Success";
 import Loading from "./components/Loading";
 
-// NEW: Static pages
+// Static pages
 import About from "./components/About";
 import Contact from "./components/Contact";
 import Privacy from "./components/Privacy";
@@ -53,15 +53,6 @@ const AuthenticatedUser = ({ children }: { children: React.ReactNode }) => {
 };
 
 // ======================= ROUTER =======================
-// NOTE: EditMenu is NOT routed here. It's a modal/dialog component
-// (open, onOpenChange, form, Update Menu button) meant to be rendered
-// inside an admin page (e.g. Restaurant.tsx / Orders.tsx / AddMenu.tsx)
-// and toggled via local state when the user clicks "Edit" on a menu item.
-// Import it directly in that page instead:
-//   import EditMenu from "./EditMenu";
-//   const [editOpen, setEditOpen] = useState(false);
-//   const [selectedMenu, setSelectedMenu] = useState<MenuItem | null>(null);
-//   <EditMenu selectedMenu={selectedMenu} editOpen={editOpen} setEditOpen={setEditOpen} />
 
 const appRouter = createBrowserRouter([
   // Main app with protected routes
@@ -81,6 +72,12 @@ const appRouter = createBrowserRouter([
         path: "/profile",
         element: <Profile />,
       },
+      // FIXED: Search without text (browse all)
+      {
+        path: "/search",
+        element: <SearchPage />,
+      },
+      // Search with text
       {
         path: "/search/:text",
         element: <SearchPage />,
@@ -97,7 +94,7 @@ const appRouter = createBrowserRouter([
         path: "/order/success",
         element: <Success />,
       },
-      // NEW: Static pages (public within app)
+      // Static pages
       {
         path: "/about",
         element: <About />,
@@ -129,7 +126,7 @@ const appRouter = createBrowserRouter([
       },
     ],
   },
-  // Auth routes (redirect if already logged in)
+  // Auth routes
   {
     path: "/login",
     element: (

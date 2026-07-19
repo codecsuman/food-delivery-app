@@ -3,8 +3,8 @@ export type CheckoutSessionRequest = {
     menuId: string;
     name: string;
     image: string;
-    price: number; // FIXED: was string, backend expects number
-    quantity: number; // FIXED: was string, backend expects number
+    price: number;
+    quantity: number;
   }[];
   deliveryDetails: {
     name: string;
@@ -35,6 +35,7 @@ export interface Orders {
   totalAmount: number;
   status: string;
   paymentIntentId?: string;
+  paymentMethod?: "stripe" | "cod";
   createdAt: string;
   updatedAt: string;
 }
@@ -44,7 +45,14 @@ export type OrderState = {
   orders: Orders[];
   createCheckoutSession: (
     checkoutSessionRequest: CheckoutSessionRequest,
+    paymentMethod?: "stripe" | "cod",
   ) => Promise<void>;
   getOrderDetails: () => Promise<void>;
   getOrderBySessionId: (sessionId: string) => Promise<Orders | null>;
+  getOrderById: (orderId: string) => Promise<Orders | null>;
+  pollOrderStatus: (
+    orderId: string,
+    interval?: number,
+  ) => Promise<Orders | null>;
+  cancelOrder: (orderId: string) => Promise<void>;
 };

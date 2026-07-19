@@ -21,6 +21,7 @@ export const useRestaurantStore = create<RestaurantState>()(
     (set, get) => ({
       loading: false,
       restaurant: null,
+      restaurants: [],
       searchedRestaurant: null,
       appliedFilter: [],
       singleRestaurant: null,
@@ -85,18 +86,15 @@ export const useRestaurantStore = create<RestaurantState>()(
       ) => {
         try {
           set({ loading: true });
-
           const params = new URLSearchParams();
           params.set("searchText", searchText);
           if (searchQuery) params.set("searchQuery", searchQuery);
-          if (selectedCuisines.length) {
+          if (selectedCuisines.length)
             params.set("selectedCuisines", selectedCuisines.join(","));
-          }
 
           const response = await axios.get(
             `${API_END_POINT}/search?${params.toString()}`,
           );
-
           if (response.data.success) {
             set({ searchedRestaurant: response.data });
           }
@@ -206,7 +204,6 @@ export const useRestaurantStore = create<RestaurantState>()(
         }
       },
 
-      // FIXED: Correct endpoint - "/order" (singular) not "/orders"
       getRestaurantOrders: async () => {
         try {
           set({ loading: true });
@@ -232,9 +229,7 @@ export const useRestaurantStore = create<RestaurantState>()(
           const response = await axios.put(
             `${API_END_POINT}/order/${orderId}/status`,
             { status },
-            {
-              headers: { "Content-Type": "application/json" },
-            },
+            { headers: { "Content-Type": "application/json" } },
           );
           if (response.data.success) {
             const updatedOrders = get().restaurantOrder.map((order: Orders) =>
@@ -249,13 +244,67 @@ export const useRestaurantStore = create<RestaurantState>()(
           toast.error(getErrorMessage(error));
         }
       },
+
+      getUserRestaurants: async () => {
+        try {
+          set({ loading: true });
+          const response = await axios.get(
+            `${API_END_POINT}/my-restaurants?t=${Date.now()}`,
+          );
+          if (response.data.success) {
+            set({ restaurants: response.data.restaurants || [] });
+          }
+        } catch (error: any) {
+          if (error?.response?.status !== 404) {
+            toast.error(getErrorMessage(error));
+          }
+        } finally {
+          set({ loading: false });
+        }
+      },
+
+      getAllRestaurants: async () => {
+        try {
+          set({ loading: true });
+          const response = await axios.get(
+            `${API_END_POINT}/all?t=${Date.now()}`,
+          );
+          if (response.data.success) {
+            set({ searchedRestaurant: { data: response.data.data || [] } });
+          }
+        } catch (error: any) {
+          toast.error(getErrorMessage(error));
+        } finally {
+          set({ loading: false });
+        }
+      },
+
+      deleteRestaurant: async (id: string) => {
+        try {
+          set({ loading: true });
+          const response = await axios.delete(`${API_END_POINT}/${id}`);
+          if (response.data.success) {
+            toast.success(response.data.message);
+            set((state) => ({
+              restaurants: state.restaurants.filter((r) => r._id !== id),
+              restaurant:
+                state.restaurant?._id === id ? null : state.restaurant,
+            }));
+            return true;
+          }
+          return false;
+        } catch (error: any) {
+          toast.error(getErrorMessage(error));
+          return false;
+        } finally {
+          set({ loading: false });
+        }
+      },
     }),
     {
       name: "restaurant-store",
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        appliedFilter: state.appliedFilter,
-      }),
+      partialize: (state) => ({ appliedFilter: state.appliedFilter }),
     },
   ),
 );

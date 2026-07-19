@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Restaurant } from "../models/restaurant.model.js";
 import { Order } from "../models/order.model.js";
 import Stripe from "stripe";
+import mongoose from "mongoose";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
@@ -30,13 +31,47 @@ export const getOrders = async (req: Request, res: Response) => {
       .populate("user", "fullname email")
       .sort({ createdAt: -1 });
 
-    return res.status(200).json({
-      success: true,
-      count: orders.length,
-      orders,
-    });
+    return res
+      .status(200)
+      .json({ success: true, count: orders.length, orders });
   } catch (error) {
     console.error("Get orders error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ======================= GET ORDER BY ID =======================
+export const getOrderById = async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid order ID" });
+    }
+
+    const order = await Order.findById(orderId)
+      .populate("restaurant", "restaurantName imageUrl")
+      .populate("user", "fullname email");
+
+    if (!order) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+    }
+
+    if (order.user.toString() !== req.id) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
+    }
+
+    return res.status(200).json({ success: true, order });
+  } catch (error) {
+    console.error("Get order by id error:", error);
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -49,43 +84,63 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
     const checkoutSessionRequest: CheckoutSessionRequest = req.body;
 
     if (!checkoutSessionRequest.cartItems?.length) {
-      return res.status(400).json({
-        success: false,
-        message: "Cart items are required",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Cart items are required" });
     }
-
     if (!checkoutSessionRequest.deliveryDetails) {
-      return res.status(400).json({
-        success: false,
-        message: "Delivery details are required",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Delivery details are required" });
     }
-
     if (!checkoutSessionRequest.restaurantId) {
-      return res.status(400).json({
-        success: false,
-        message: "Restaurant ID is required",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Restaurant ID is required" });
     }
 
     const restaurant = await Restaurant.findById(
       checkoutSessionRequest.restaurantId,
     ).populate("menus");
-
     if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "Restaurant not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Restaurant not found" });
     }
 
     const totalAmount = checkoutSessionRequest.cartItems.reduce(
       (sum, item) => sum + item.price * item.quantity,
       0,
     );
+    const paymentMethod = (req.body.paymentMethod as string) || "stripe";
 
-    // Create order with proper restaurant reference
+    // ========== CASH ON DELIVERY ==========
+    if (paymentMethod === "cod") {
+      const order = await Order.create({
+        restaurant: restaurant._id,
+        user: req.id,
+        deliveryDetails: checkoutSessionRequest.deliveryDetails,
+        cartItems: checkoutSessionRequest.cartItems,
+        totalAmount,
+        status: "confirmed",
+        paymentMethod: "cod",
+      });
+
+      // Increment orderCount for each menu item
+      const Menu = mongoose.model("Menu");
+      for (const item of checkoutSessionRequest.cartItems) {
+        await Menu.findByIdAndUpdate(item.menuId, { $inc: { orderCount: 1 } });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Order placed successfully with Cash on Delivery",
+        order,
+        paymentMethod: "cod",
+      });
+    }
+
+    // ========== STRIPE PAYMENT ==========
     const order = await Order.create({
       restaurant: restaurant._id,
       user: req.id,
@@ -93,6 +148,7 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
       cartItems: checkoutSessionRequest.cartItems,
       totalAmount,
       status: "pending",
+      paymentMethod: "stripe",
     });
 
     const lineItems = createLineItems(checkoutSessionRequest, restaurant.menus);
@@ -101,9 +157,7 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
       lineItems.push({
         price_data: {
           currency: "inr",
-          product_data: {
-            name: "Delivery Fee",
-          } as any,
+          product_data: { name: "Delivery Fee" } as any,
           unit_amount: Math.round(restaurant.deliveryPrice * 100),
         },
         quantity: 1,
@@ -137,11 +191,7 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
     order.paymentIntentId = session.id;
     await order.save();
 
-    return res.status(200).json({
-      success: true,
-      session,
-      orderId: order._id,
-    });
+    return res.status(200).json({ success: true, session, orderId: order._id });
   } catch (error) {
     console.error("Create checkout session error:", error);
     return res
@@ -188,7 +238,13 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       order.paymentIntentId = session.payment_intent as string;
       await order.save();
 
-      console.log(`✅ Order ${order._id} confirmed via webhook`);
+      // Increment orderCount for each menu item
+      const Menu = mongoose.model("Menu");
+      for (const item of order.cartItems) {
+        await Menu.findByIdAndUpdate(item.menuId, { $inc: { orderCount: 1 } });
+      }
+
+      console.log(`Order ${order._id} confirmed via webhook`);
     } catch (error) {
       console.error("Error handling webhook event:", error);
       return res.status(200).send();
@@ -199,11 +255,10 @@ export const stripeWebhook = async (req: Request, res: Response) => {
     try {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
       const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
-
       if (order) {
         order.status = "payment_failed";
         await order.save();
-        console.log(`❌ Order ${order._id} payment failed`);
+        console.log(`Order ${order._id} payment failed`);
       }
     } catch (error) {
       console.error("Error handling payment failure:", error);
@@ -222,15 +277,11 @@ export const createLineItems = (
     const menuItem = menuItems.find(
       (item: any) => item._id.toString() === cartItem.menuId,
     );
-
     if (!menuItem) {
       throw new Error(`Menu item ${cartItem.menuId} not found`);
     }
 
-    const productData: any = {
-      name: menuItem.name,
-    };
-
+    const productData: any = { name: menuItem.name };
     if (menuItem.image) {
       productData.images = [menuItem.image];
     }
@@ -252,14 +303,12 @@ export const createLineItems = (
 export const getOrderBySessionId = async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
-
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (!session.metadata?.orderId) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found for this session",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found for this session" });
     }
 
     const order = await Order.findById(session.metadata.orderId)
@@ -267,17 +316,12 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
       .populate("user", "fullname email");
 
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
     }
 
-    return res.status(200).json({
-      success: true,
-      order,
-      session,
-    });
+    return res.status(200).json({ success: true, order, session });
   } catch (error) {
     console.error("Get order by session error:", error);
     return res
