@@ -28,12 +28,11 @@ type MenuItem = {
 type MenuState = {
   loading: boolean;
   menu: MenuItem | null;
-  menus: MenuItem[]; // FIXED: Added for all menus list
+  menus: MenuItem[];
   createMenu: (formData: FormData) => Promise<MenuItem | null>;
   editMenu: (menuId: string, formData: FormData) => Promise<MenuItem | null>;
   deleteMenu: (menuId: string) => Promise<boolean>;
-  getMenu: (menuId: string) => Promise<MenuItem | null>; // FIXED: Added
-  getAllMenus: () => Promise<void>; // FIXED: Added for search
+  getAllMenus: () => Promise<void>;
 };
 
 export const useMenuStore = create<MenuState>()(
@@ -41,9 +40,8 @@ export const useMenuStore = create<MenuState>()(
     (set) => ({
       loading: false,
       menu: null,
-      menus: [], // FIXED: Initialize empty array
+      menus: [],
 
-      // FIXED: Create menu with better error handling and state sync
       createMenu: async (formData: FormData) => {
         try {
           set({ loading: true });
@@ -58,10 +56,7 @@ export const useMenuStore = create<MenuState>()(
             const newMenu = response.data.menu;
             set({ menu: newMenu });
 
-            // FIXED: Sync with restaurant store, but also re-fetch to ensure consistency
             useRestaurantStore.getState().addMenuToRestaurant(newMenu);
-
-            // FIXED: Re-fetch restaurant to get fully populated data
             await useRestaurantStore.getState().getRestaurant();
 
             return newMenu;
@@ -75,7 +70,6 @@ export const useMenuStore = create<MenuState>()(
         }
       },
 
-      // FIXED: Edit menu with better state sync
       editMenu: async (menuId: string, formData: FormData) => {
         try {
           set({ loading: true });
@@ -94,10 +88,7 @@ export const useMenuStore = create<MenuState>()(
             const updatedMenu = response.data.menu;
             set({ menu: updatedMenu });
 
-            // FIXED: Sync with restaurant store
             useRestaurantStore.getState().updateMenuToRestaurant(updatedMenu);
-
-            // FIXED: Re-fetch to ensure consistency
             await useRestaurantStore.getState().getRestaurant();
 
             return updatedMenu;
@@ -111,7 +102,6 @@ export const useMenuStore = create<MenuState>()(
         }
       },
 
-      // FIXED: Delete menu with proper cleanup
       deleteMenu: async (menuId: string) => {
         try {
           set({ loading: true });
@@ -120,15 +110,12 @@ export const useMenuStore = create<MenuState>()(
           if (response.data.success) {
             toast.success(response.data.message);
 
-            // FIXED: Remove from all relevant states
             useRestaurantStore.getState().removeMenuFromRestaurant(menuId);
 
-            // FIXED: Also remove from menus list if present
             set((state) => ({
               menus: state.menus.filter((m) => m._id !== menuId),
             }));
 
-            // FIXED: Re-fetch restaurant to sync
             await useRestaurantStore.getState().getRestaurant();
 
             return true;
@@ -142,25 +129,6 @@ export const useMenuStore = create<MenuState>()(
         }
       },
 
-      // FIXED: Get single menu
-      getMenu: async (menuId: string) => {
-        try {
-          set({ loading: true });
-          const response = await axios.get(`${API_END_POINT}/${menuId}`);
-          if (response.data.success) {
-            set({ menu: response.data.menu });
-            return response.data.menu;
-          }
-          return null;
-        } catch (error: any) {
-          toast.error(getErrorMessage(error));
-          return null;
-        } finally {
-          set({ loading: false });
-        }
-      },
-
-      // FIXED: Get all menus (useful for search)
       getAllMenus: async () => {
         try {
           set({ loading: true });
@@ -178,10 +146,7 @@ export const useMenuStore = create<MenuState>()(
     {
       name: "menu-store",
       storage: createJSONStorage(() => localStorage),
-      // FIXED: Don't persist menu data to avoid stale data
-      partialize: (_state) => ({
-        // Only persist nothing - always fetch fresh
-      }),
+      partialize: () => ({}),
     },
   ),
 );

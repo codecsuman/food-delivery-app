@@ -26,14 +26,34 @@ type CheckoutSessionRequest = {
 // ======================= GET ORDERS (for user) =======================
 export const getOrders = async (req: Request, res: Response) => {
   try {
-    const orders = await Order.find({ user: req.id })
-      .populate("restaurant", "restaurantName imageUrl")
-      .populate("user", "fullname email")
-      .sort({ createdAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(
+      50,
+      Math.max(1, parseInt(req.query.limit as string) || 20),
+    );
+    const skip = (page - 1) * limit;
 
-    return res
-      .status(200)
-      .json({ success: true, count: orders.length, orders });
+    const [orders, totalCount] = await Promise.all([
+      Order.find({ user: req.id })
+        .populate("restaurant", "restaurantName imageUrl")
+        .populate("user", "fullname email")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Order.countDocuments({ user: req.id }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      orders,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount / limit),
+        totalCount,
+        limit,
+      },
+    });
   } catch (error) {
     console.error("Get orders error:", error);
     return res
@@ -114,7 +134,7 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
     );
     const paymentMethod = (req.body.paymentMethod as string) || "stripe";
 
-    // ========== CASH ON DELIVERY ==========
+    // ========== CASH ON DELIVERY (DEMO SKIP) ==========
     if (paymentMethod === "cod") {
       const order = await Order.create({
         restaurant: restaurant._id,
@@ -231,6 +251,14 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         return res.status(200).send();
       }
 
+      // ✅ IDEMPOTENCY FIX: Only process if still pending
+      if (order.status !== "pending") {
+        console.log(
+          `Webhook: order ${order._id} already processed (status: ${order.status})`,
+        );
+        return res.status(200).send();
+      }
+
       if (session.amount_total) {
         order.totalAmount = session.amount_total / 100;
       }
@@ -256,9 +284,12 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
       const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
       if (order) {
-        order.status = "payment_failed";
-        await order.save();
-        console.log(`Order ${order._id} payment failed`);
+        // ✅ Only mark as failed if not already confirmed
+        if (order.status === "pending") {
+          order.status = "payment_failed";
+          await order.save();
+          console.log(`Order ${order._id} payment failed`);
+        }
       }
     } catch (error) {
       console.error("Error handling payment failure:", error);
@@ -319,6 +350,13 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
       return res
         .status(404)
         .json({ success: false, message: "Order not found" });
+    }
+
+    // ✅ Authorization check
+    if (order.user.toString() !== req.id) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized" });
     }
 
     return res.status(200).json({ success: true, order, session });

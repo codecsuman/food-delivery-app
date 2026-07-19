@@ -2,6 +2,16 @@ import { Restaurant } from "../models/restaurant.model.js";
 import { uploadImage, deleteImage } from "../utils/cloudinary.js";
 import { Order } from "../models/order.model.js";
 import mongoose from "mongoose";
+// Valid order status transitions (state machine)
+const STATUS_TRANSITIONS = {
+    pending: ["confirmed", "cancelled", "payment_failed"],
+    confirmed: ["preparing", "cancelled"],
+    preparing: ["outfordelivery", "cancelled"],
+    outfordelivery: ["delivered", "cancelled"],
+    delivered: [],
+    cancelled: [],
+    payment_failed: [],
+};
 // ======================= CREATE RESTAURANT =======================
 export const createRestaurant = async (req, res) => {
     try {
@@ -114,7 +124,7 @@ export const getAllRestaurants = async (_req, res) => {
         return res.status(200).json({
             success: true,
             count: restaurants.length,
-            data: restaurants,
+            restaurants,
         });
     }
     catch (error) {
@@ -290,6 +300,7 @@ export const updateOrderStatus = async (req, res) => {
             "outfordelivery",
             "delivered",
             "cancelled",
+            "payment_failed",
         ];
         if (!allowedStatuses.includes(status.toLowerCase())) {
             return res.status(400).json({
@@ -317,7 +328,20 @@ export const updateOrderStatus = async (req, res) => {
                 message: "Not authorized to update this order",
             });
         }
-        order.status = status.toLowerCase();
+        // ✅ STATE MACHINE: Validate status transition
+        const currentStatus = order.status;
+        const newStatus = status.toLowerCase();
+        const allowedNextStatuses = STATUS_TRANSITIONS[currentStatus] || [];
+        if (!allowedNextStatuses.includes(newStatus) &&
+            currentStatus !== newStatus) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot transition from "${currentStatus}" to "${newStatus}"`,
+                currentStatus,
+                allowedNextStatuses,
+            });
+        }
+        order.status = newStatus;
         await order.save();
         return res.status(200).json({
             success: true,
@@ -410,7 +434,7 @@ export const searchRestaurant = async (req, res) => {
             .sort({ createdAt: -1 });
         return res
             .status(200)
-            .json({ success: true, count: restaurants.length, data: restaurants });
+            .json({ success: true, count: restaurants.length, restaurants });
     }
     catch (error) {
         console.error("Search restaurant error:", error);

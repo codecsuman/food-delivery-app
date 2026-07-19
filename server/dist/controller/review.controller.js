@@ -41,12 +41,26 @@ export const addReview = async (req, res) => {
             userName: req.body.userName || "Anonymous",
             userImage: req.body.userImage || "",
         });
-        // Update restaurant rating
-        const allReviews = await Review.find({ restaurant: restaurantId });
-        const avgRating = allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length;
+        // ✅ ATOMIC RATING UPDATE: Use aggregation to avoid race condition
+        const ratingResult = await Review.aggregate([
+            {
+                $match: {
+                    restaurant: new mongoose.Types.ObjectId(restaurantId),
+                },
+            },
+            {
+                $group: {
+                    _id: "$restaurant",
+                    avgRating: { $avg: "$rating" },
+                    count: { $sum: 1 },
+                },
+            },
+        ]);
+        const avgRating = ratingResult.length > 0 ? ratingResult[0].avgRating : 0;
+        const count = ratingResult.length > 0 ? ratingResult[0].count : 0;
         await Restaurant.findByIdAndUpdate(restaurantId, {
             rating: Math.round(avgRating * 10) / 10,
-            ratingCount: allReviews.length,
+            ratingCount: count,
         });
         const populatedReview = await Review.findById(review._id)
             .populate("user", "fullname profilePicture")
@@ -73,12 +87,28 @@ export const getReviewsByRestaurant = async (req, res) => {
                 .status(400)
                 .json({ success: false, message: "Invalid restaurant ID" });
         }
-        const reviews = await Review.find({ restaurant: restaurantId })
-            .populate("user", "fullname profilePicture")
-            .sort({ createdAt: -1 });
-        return res
-            .status(200)
-            .json({ success: true, count: reviews.length, reviews });
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+        const skip = (page - 1) * limit;
+        const [reviews, totalCount] = await Promise.all([
+            Review.find({ restaurant: restaurantId })
+                .populate("user", "fullname profilePicture")
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+            Review.countDocuments({ restaurant: restaurantId }),
+        ]);
+        return res.status(200).json({
+            success: true,
+            count: reviews.length,
+            totalCount,
+            reviews,
+            pagination: {
+                currentPage: page,
+                totalPages: Math.ceil(totalCount / limit),
+                limit,
+            },
+        });
     }
     catch (error) {
         console.error("Get reviews error:", error);
@@ -90,12 +120,28 @@ export const getReviewsByRestaurant = async (req, res) => {
 // ======================= GET USER'S REVIEWS =======================
 export const getUserReviews = async (req, res) => {
     try {
-        const reviews = await Review.find({ user: req.id })
-            .populate("restaurant", "restaurantName imageUrl")
-            .sort({ createdAt: -1 });
-        return res
-            .status(200)
-            .json({ success: true, count: reviews.length, reviews });
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+        const skip = (page - 1) * limit;
+        const [reviews, totalCount] = await Promise.all([
+            Review.find({ user: req.id })
+                .populate("restaurant", "restaurantName imageUrl")
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+            Review.countDocuments({ user: req.id }),
+        ]);
+        return res.status(200).json({
+            success: true,
+            count: reviews.length,
+            totalCount,
+            reviews,
+            pagination: {
+                currentPage: page,
+                totalPages: Math.ceil(totalCount / limit),
+                limit,
+            },
+        });
     }
     catch (error) {
         console.error("Get user reviews error:", error);
@@ -119,15 +165,28 @@ export const deleteReview = async (req, res) => {
                 .status(404)
                 .json({ success: false, message: "Review not found" });
         }
+        const restaurantId = review.restaurant;
         await Review.findByIdAndDelete(id);
-        // Recalculate restaurant rating
-        const allReviews = await Review.find({ restaurant: review.restaurant });
-        const avgRating = allReviews.length > 0
-            ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
-            : 0;
-        await Restaurant.findByIdAndUpdate(review.restaurant, {
+        // ✅ ATOMIC RATING UPDATE: Use aggregation after delete
+        const ratingResult = await Review.aggregate([
+            {
+                $match: {
+                    restaurant: new mongoose.Types.ObjectId(String(restaurantId)),
+                },
+            },
+            {
+                $group: {
+                    _id: "$restaurant",
+                    avgRating: { $avg: "$rating" },
+                    count: { $sum: 1 },
+                },
+            },
+        ]);
+        const avgRating = ratingResult.length > 0 ? ratingResult[0].avgRating : 0;
+        const count = ratingResult.length > 0 ? ratingResult[0].count : 0;
+        await Restaurant.findByIdAndUpdate(restaurantId, {
             rating: Math.round(avgRating * 10) / 10,
-            ratingCount: allReviews.length,
+            ratingCount: count,
         });
         return res
             .status(200)

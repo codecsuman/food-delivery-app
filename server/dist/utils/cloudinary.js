@@ -44,7 +44,7 @@ export const uploadImage = async (base64Image, folder = "suman-food") => {
 };
 // Delete image from Cloudinary
 export const deleteImage = async (publicId) => {
-    if (!hasCloudinaryConfig || publicId === "placeholder") {
+    if (!hasCloudinaryConfig || publicId === "placeholder" || !publicId) {
         return;
     }
     try {
@@ -54,15 +54,35 @@ export const deleteImage = async (publicId) => {
         console.error("❌ Cloudinary delete error:", error);
     }
 };
-// Extract public_id from Cloudinary URL
+/**
+ * Extract public_id from Cloudinary URL.
+ * Cloudinary URLs look like:
+ * https://res.cloudinary.com/<cloud>/image/upload/v1234567890/folder/name.jpg
+ * We need to extract: folder/name (without extension and version)
+ */
 export const getPublicIdFromUrl = (url) => {
-    if (!url || url.includes("placeholder"))
+    if (!url || url.includes("placeholder") || url.includes("via.placeholder")) {
         return null;
+    }
     try {
-        const parts = url.split("/");
-        const fileName = parts[parts.length - 1];
-        const publicId = fileName.split(".")[0];
-        return publicId ? `suman-food/${publicId}` : null;
+        // Remove query params
+        const cleanUrl = url.split("?")[0];
+        const urlObj = new URL(cleanUrl);
+        const pathParts = urlObj.pathname.split("/");
+        // Find "upload" index, everything after it (skip version if present) is the public_id
+        const uploadIndex = pathParts.indexOf("upload");
+        if (uploadIndex === -1 || uploadIndex + 1 >= pathParts.length) {
+            return null;
+        }
+        // Skip version folder (starts with "v" followed by digits)
+        let startIndex = uploadIndex + 1;
+        if (pathParts[startIndex] && /^v\d+$/.test(pathParts[startIndex])) {
+            startIndex++;
+        }
+        // Join remaining parts and remove file extension
+        const publicIdWithExt = pathParts.slice(startIndex).join("/");
+        const publicId = publicIdWithExt.replace(/\.[^/.]+$/, "");
+        return publicId || null;
     }
     catch {
         return null;

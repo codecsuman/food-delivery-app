@@ -80,7 +80,6 @@ export const useRestaurantStore = create<RestaurantState>()(
         }
       },
 
-      // ======================= SEARCH (real-time + filters) =======================
       searchRestaurant: async (
         searchText: string,
         searchQuery: string,
@@ -105,7 +104,12 @@ export const useRestaurantStore = create<RestaurantState>()(
             `${API_END_POINT}/search?${params.toString()}`,
           );
           if (response.data.success) {
-            set({ searchedRestaurant: response.data });
+            set({
+              searchedRestaurant: {
+                data: response.data.restaurants || [],
+                count: response.data.count,
+              },
+            });
           }
         } catch (error: any) {
           if (error?.response?.status === 404) {
@@ -118,7 +122,6 @@ export const useRestaurantStore = create<RestaurantState>()(
         }
       },
 
-      // ======================= GET FILTER OPTIONS (distinct cuisines + dishes) =======================
       getFilterOptions: async () => {
         try {
           const response = await axios.get(`${API_END_POINT}/filters`);
@@ -131,7 +134,7 @@ export const useRestaurantStore = create<RestaurantState>()(
             });
           }
         } catch (error: any) {
-          // silent fail — filter panel just falls back to empty lists
+          // silent fail
         }
       },
 
@@ -296,7 +299,11 @@ export const useRestaurantStore = create<RestaurantState>()(
             `${API_END_POINT}/all?t=${Date.now()}`,
           );
           if (response.data.success) {
-            set({ searchedRestaurant: { data: response.data.data || [] } });
+            set({
+              searchedRestaurant: {
+                data: response.data.restaurants || [],
+              },
+            });
           }
         } catch (error: any) {
           toast.error(getErrorMessage(error));

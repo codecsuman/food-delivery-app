@@ -6,13 +6,29 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // ======================= GET ORDERS (for user) =======================
 export const getOrders = async (req, res) => {
     try {
-        const orders = await Order.find({ user: req.id })
-            .populate("restaurant", "restaurantName imageUrl")
-            .populate("user", "fullname email")
-            .sort({ createdAt: -1 });
-        return res
-            .status(200)
-            .json({ success: true, count: orders.length, orders });
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+        const skip = (page - 1) * limit;
+        const [orders, totalCount] = await Promise.all([
+            Order.find({ user: req.id })
+                .populate("restaurant", "restaurantName imageUrl")
+                .populate("user", "fullname email")
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+            Order.countDocuments({ user: req.id }),
+        ]);
+        return res.status(200).json({
+            success: true,
+            count: orders.length,
+            orders,
+            pagination: {
+                currentPage: page,
+                totalPages: Math.ceil(totalCount / limit),
+                totalCount,
+                limit,
+            },
+        });
     }
     catch (error) {
         console.error("Get orders error:", error);
@@ -79,7 +95,7 @@ export const createCheckoutSession = async (req, res) => {
         }
         const totalAmount = checkoutSessionRequest.cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
         const paymentMethod = req.body.paymentMethod || "stripe";
-        // ========== CASH ON DELIVERY ==========
+        // ========== CASH ON DELIVERY (DEMO SKIP) ==========
         if (paymentMethod === "cod") {
             const order = await Order.create({
                 restaurant: restaurant._id,
@@ -177,6 +193,11 @@ export const stripeWebhook = async (req, res) => {
                 console.error(`Webhook: order ${session.metadata?.orderId} not found`);
                 return res.status(200).send();
             }
+            // ✅ IDEMPOTENCY FIX: Only process if still pending
+            if (order.status !== "pending") {
+                console.log(`Webhook: order ${order._id} already processed (status: ${order.status})`);
+                return res.status(200).send();
+            }
             if (session.amount_total) {
                 order.totalAmount = session.amount_total / 100;
             }
@@ -200,9 +221,12 @@ export const stripeWebhook = async (req, res) => {
             const paymentIntent = event.data.object;
             const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
             if (order) {
-                order.status = "payment_failed";
-                await order.save();
-                console.log(`Order ${order._id} payment failed`);
+                // ✅ Only mark as failed if not already confirmed
+                if (order.status === "pending") {
+                    order.status = "payment_failed";
+                    await order.save();
+                    console.log(`Order ${order._id} payment failed`);
+                }
             }
         }
         catch (error) {
@@ -250,6 +274,12 @@ export const getOrderBySessionId = async (req, res) => {
             return res
                 .status(404)
                 .json({ success: false, message: "Order not found" });
+        }
+        // ✅ Authorization check
+        if (order.user.toString() !== req.id) {
+            return res
+                .status(403)
+                .json({ success: false, message: "Not authorized" });
         }
         return res.status(200).json({ success: true, order, session });
     }

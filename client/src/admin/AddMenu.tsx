@@ -30,7 +30,7 @@ const AddMenu = () => {
   const [error, setError] = useState<Partial<MenuFormSchema>>({});
   const [previewImage, setPreviewImage] = useState<string>("");
 
-  const { loading, createMenu } = useMenuStore();
+  const { loading, createMenu, deleteMenu } = useMenuStore();
   const { restaurant, addMenuToRestaurant, removeMenuFromRestaurant } = useRestaurantStore();
 
   const changeEventHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,8 +87,10 @@ const AddMenu = () => {
     if (!confirm("Are you sure you want to delete this menu item?")) return;
 
     try {
-      // await deleteMenu(menuId);
-      removeMenuFromRestaurant(menuId);
+      const success = await deleteMenu(menuId);
+      if (success) {
+        removeMenuFromRestaurant(menuId);
+      }
     } catch (error) {
       console.error("Delete menu error:", error);
     }

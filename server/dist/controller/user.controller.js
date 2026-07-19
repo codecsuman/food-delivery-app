@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { uploadImage, deleteImage, getPublicIdFromUrl, } from "../utils/cloudinary.js";
 import { generateToken, clearToken } from "../utils/generateToken.js";
 import { sendPasswordResetEmail, sendResetSuccessEmail, sendWelcomeEmail, } from "../mailtrap/email.js";
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // ======================= SIGNUP =======================
 export const signup = async (req, res) => {
     try {
@@ -14,7 +15,6 @@ export const signup = async (req, res) => {
                 message: "Fullname, email and password are required",
             });
         }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             return res.status(400).json({
                 success: false,
@@ -35,13 +35,14 @@ export const signup = async (req, res) => {
             });
         }
         const hashedPassword = await bcrypt.hash(password, 10);
+        // ✅ FIX: Don't set admin: true for everyone — default to false
         user = await User.create({
             fullname,
             email,
             password: hashedPassword,
             contact: contact ? Number(contact) : null,
             isVerified: true,
-            admin: true,
+            admin: false,
         });
         generateToken(res, user);
         try {
@@ -59,6 +60,13 @@ export const signup = async (req, res) => {
     }
     catch (error) {
         console.error("Signup error:", error);
+        // ✅ Handle duplicate key error (race condition on email)
+        if (error.code === 11000 && error.keyPattern?.email) {
+            return res.status(409).json({
+                success: false,
+                message: "User already exists with this email",
+            });
+        }
         return res
             .status(500)
             .json({ success: false, message: "Internal server error" });
@@ -292,13 +300,23 @@ export const updateProfile = async (req, res) => {
                 message: "User not found",
             });
         }
-        if (email && email !== user.email) {
-            const existingUser = await User.findOne({ email });
-            if (existingUser) {
-                return res.status(409).json({
+        // ✅ Email format validation
+        if (email !== undefined) {
+            const trimmedEmail = email.toLowerCase().trim();
+            if (!emailRegex.test(trimmedEmail)) {
+                return res.status(400).json({
                     success: false,
-                    message: "Email already in use by another account",
+                    message: "Invalid email format",
                 });
+            }
+            if (trimmedEmail !== user.email) {
+                const existingUser = await User.findOne({ email: trimmedEmail });
+                if (existingUser) {
+                    return res.status(409).json({
+                        success: false,
+                        message: "Email already in use by another account",
+                    });
+                }
             }
         }
         const updateData = {};
@@ -341,6 +359,13 @@ export const updateProfile = async (req, res) => {
     }
     catch (error) {
         console.error("Update profile error:", error);
+        // ✅ Handle duplicate key error (race condition on email)
+        if (error.code === 11000 && error.keyPattern?.email) {
+            return res.status(409).json({
+                success: false,
+                message: "Email already in use by another account",
+            });
+        }
         return res.status(500).json({
             success: false,
             message: "Internal server error",

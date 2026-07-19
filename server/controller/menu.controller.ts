@@ -6,6 +6,7 @@ import {
 } from "../utils/cloudinary.js";
 import { Menu } from "../models/menu.model.js";
 import { Restaurant } from "../models/restaurant.model.js";
+import { Order } from "../models/order.model.js";
 import mongoose from "mongoose";
 
 // ======================= ADD MENU =======================
@@ -182,6 +183,26 @@ export const deleteMenu = async (req: Request, res: Response) => {
       });
     }
 
+    // ✅ CHECK ACTIVE ORDERS: Prevent deleting items in pending/confirmed/preparing orders
+    const activeStatuses = [
+      "pending",
+      "confirmed",
+      "preparing",
+      "outfordelivery",
+    ];
+    const activeOrder = await Order.findOne({
+      "cartItems.menuId": id,
+      status: { $in: activeStatuses },
+    });
+
+    if (activeOrder) {
+      return res.status(409).json({
+        success: false,
+        message: "Cannot delete: This item is part of an active order",
+        orderId: activeOrder._id,
+      });
+    }
+
     if (menu.imagePublicId) {
       await deleteImage(menu.imagePublicId);
     }
@@ -217,14 +238,31 @@ export const getMenuByRestaurant = async (req: Request, res: Response) => {
       });
     }
 
-    const menus = await Menu.find({ restaurant: restaurantId }).sort({
-      createdAt: -1,
-    });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(req.query.limit as string) || 50),
+    );
+    const skip = (page - 1) * limit;
+
+    const [menus, totalCount] = await Promise.all([
+      Menu.find({ restaurant: restaurantId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Menu.countDocuments({ restaurant: restaurantId }),
+    ]);
 
     return res.status(200).json({
       success: true,
       count: menus.length,
+      totalCount,
       menus,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount / limit),
+        limit,
+      },
     });
   } catch (error) {
     console.error("Get menu by restaurant error:", error);
@@ -237,12 +275,28 @@ export const getMenuByRestaurant = async (req: Request, res: Response) => {
 // ======================= GET ALL MENUS =======================
 export const getAllMenus = async (req: Request, res: Response) => {
   try {
-    const menus = await Menu.find().sort({ createdAt: -1 }).limit(20);
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(req.query.limit as string) || 20),
+    );
+    const skip = (page - 1) * limit;
+
+    const [menus, totalCount] = await Promise.all([
+      Menu.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Menu.countDocuments(),
+    ]);
 
     return res.status(200).json({
       success: true,
       count: menus.length,
+      totalCount,
       menus,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount / limit),
+        limit,
+      },
     });
   } catch (error) {
     console.error("Get all menus error:", error);

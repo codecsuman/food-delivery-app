@@ -25,7 +25,7 @@ const CheckoutConfirmPage = ({
   const [paymentMethod, setPaymentMethod] = useState<"stripe" | "cod">("stripe");
 
   const [input, setInput] = useState({
-    name: "", email: "", contact: "", address: "", city: "", country: "",
+    name: "", email: "", address: "", city: "", country: "",
   });
 
   useEffect(() => {
@@ -33,7 +33,6 @@ const CheckoutConfirmPage = ({
       setInput({
         name: user.fullname || "",
         email: user.email || "",
-        contact: user.contact ? String(user.contact) : "",
         address: user.address || "",
         city: user.city || "",
         country: user.country || "",
@@ -122,11 +121,7 @@ const CheckoutConfirmPage = ({
             <Label className="text-gray-700 dark:text-gray-300 font-medium">Email</Label>
             <Input disabled type="email" name="email" value={input.email} className="bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed rounded-lg" />
           </div>
-          <div className="space-y-2">
-            <Label className="text-gray-700 dark:text-gray-300 font-medium">Contact</Label>
-            <Input type="tel" name="contact" value={input.contact} onChange={changeEventHandler} placeholder="Phone number" className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
-          </div>
-          <div className="space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 font-medium"><MapPin className="w-3.5 h-3.5 text-gray-400" /> Address</Label>
             <Input type="text" name="address" value={input.address} onChange={changeEventHandler} placeholder="Street address" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
           </div>

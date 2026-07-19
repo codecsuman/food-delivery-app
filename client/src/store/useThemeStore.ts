@@ -32,8 +32,9 @@ export const useThemeStore = create<ThemeStore>()(
 
       initializeTheme: () => {
         if (typeof window !== "undefined") {
-          const storedTheme =
-            (localStorage.getItem("vite-ui-theme") as Theme) || "light";
+          const stored = localStorage.getItem("theme-store");
+          const parsed = stored ? JSON.parse(stored) : null;
+          const storedTheme = parsed?.state?.theme || "light";
           applyTheme(storedTheme);
           set({ theme: storedTheme });
         }

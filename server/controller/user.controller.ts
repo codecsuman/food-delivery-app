@@ -14,6 +14,8 @@ import {
   sendWelcomeEmail,
 } from "../mailtrap/email.js";
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // ======================= SIGNUP =======================
 export const signup = async (req: Request, res: Response) => {
   try {
@@ -26,7 +28,6 @@ export const signup = async (req: Request, res: Response) => {
       });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
@@ -51,13 +52,14 @@ export const signup = async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // ✅ FIX: Don't set admin: true for everyone — default to false
     user = await User.create({
       fullname,
       email,
       password: hashedPassword,
       contact: contact ? Number(contact) : null,
       isVerified: true,
-      admin: true,
+      admin: false,
     });
 
     generateToken(res, user);
@@ -77,8 +79,15 @@ export const signup = async (req: Request, res: Response) => {
       message: "Account created successfully",
       user: userWithoutPassword,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Signup error:", error);
+    // ✅ Handle duplicate key error (race condition on email)
+    if (error.code === 11000 && error.keyPattern?.email) {
+      return res.status(409).json({
+        success: false,
+        message: "User already exists with this email",
+      });
+    }
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -353,13 +362,24 @@ export const updateProfile = async (req: Request, res: Response) => {
       });
     }
 
-    if (email && email !== user.email) {
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        return res.status(409).json({
+    // ✅ Email format validation
+    if (email !== undefined) {
+      const trimmedEmail = email.toLowerCase().trim();
+      if (!emailRegex.test(trimmedEmail)) {
+        return res.status(400).json({
           success: false,
-          message: "Email already in use by another account",
+          message: "Invalid email format",
         });
+      }
+
+      if (trimmedEmail !== user.email) {
+        const existingUser = await User.findOne({ email: trimmedEmail });
+        if (existingUser) {
+          return res.status(409).json({
+            success: false,
+            message: "Email already in use by another account",
+          });
+        }
       }
     }
 
@@ -409,8 +429,15 @@ export const updateProfile = async (req: Request, res: Response) => {
       message: "Profile updated successfully",
       user: updatedUser,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Update profile error:", error);
+    // ✅ Handle duplicate key error (race condition on email)
+    if (error.code === 11000 && error.keyPattern?.email) {
+      return res.status(409).json({
+        success: false,
+        message: "Email already in use by another account",
+      });
+    }
     return res.status(500).json({
       success: false,
       message: "Internal server error",

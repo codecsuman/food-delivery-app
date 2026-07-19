@@ -207,12 +207,12 @@ const Success = () => {
               Continue Shopping
             </Button>
           </Link>
-          <Link to="/order/success" className="flex-1">
+          <Link to="/search" className="flex-1">
             <Button
               variant="outline"
               className="w-full h-12 rounded-lg border-gray-200 dark:border-gray-600 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-600 dark:hover:text-orange-400 hover:border-orange-200"
             >
-              View All Orders
+              Explore Restaurants
             </Button>
           </Link>
         </div>

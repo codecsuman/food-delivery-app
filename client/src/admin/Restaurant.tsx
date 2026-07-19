@@ -7,7 +7,7 @@ import {
 } from "@/schema/restaurantSchema";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { ImageIcon, Loader2, Store, Upload } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, useRef } from "react";
 
 const Restaurant = () => {
   const [input, setInput] = useState<RestaurantFormSchema>({
@@ -21,6 +21,7 @@ const Restaurant = () => {
   });
   const [errors, setErrors] = useState<Partial<RestaurantFormSchema>>({});
   const [previewImage, setPreviewImage] = useState<string>("");
+  const hasFetched = useRef(false);
 
   const {
     loading,
@@ -77,6 +78,9 @@ const Restaurant = () => {
   };
 
   useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+
     const fetchRestaurant = async () => {
       await getRestaurant();
       const fetchedRestaurant = useRestaurantStore.getState().restaurant;
@@ -99,7 +103,7 @@ const Restaurant = () => {
     };
 
     fetchRestaurant();
-  }, [getRestaurant]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900 py-10 px-4">

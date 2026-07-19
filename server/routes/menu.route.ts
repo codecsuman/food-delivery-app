@@ -14,13 +14,13 @@ const router = express.Router();
 // Get all menus across restaurants (public — for home page)
 router.get("/", getAllMenus);
 
-// Add menu item (any logged-in user)
+// Add menu item (any logged-in user — restaurant ownership checked in controller)
 router.post("/", isAuthenticated, upload.single("image"), addMenu);
 
-// Edit menu item (any logged-in user)
+// Edit menu item (any logged-in user — restaurant ownership checked in controller)
 router.put("/:id", isAuthenticated, upload.single("image"), editMenu);
 
-// Delete menu item (any logged-in user)
+// Delete menu item (any logged-in user — restaurant ownership checked in controller)
 router.delete("/:id", isAuthenticated, deleteMenu);
 
 // Get menu by restaurant (public)

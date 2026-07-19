@@ -59,7 +59,7 @@ const getErrorMessage = (error: any): string => {
 
 export const useUserStore = create<UserState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       isAuthenticated: false,
       isCheckingAuth: true,
@@ -130,6 +130,7 @@ export const useUserStore = create<UserState>()(
       },
 
       checkAuthentication: async () => {
+        if (get().isCheckingAuth && get().user) return;
         try {
           set({ isCheckingAuth: true });
           const response = await axios.get(`${API_END_POINT}/check-auth`, {
