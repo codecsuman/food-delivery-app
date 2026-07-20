@@ -214,7 +214,7 @@ CLOUDINARY_API_SECRET=your_api_secret
 # MAILTRAP
 MAILTRAP_API_TOKEN=your_mailtrap_token
 MAILTRAP_TEST_INBOX_ID=your_inbox_id
-MAILTRAP_SENDER_EMAIL=your_sender@email.com
+
 ```
 
 > 💡 **Tip:** The app runs even without Cloudinary/Mailtrap configured — it falls back to placeholder images and console-logged emails.
