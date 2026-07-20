@@ -84,21 +84,24 @@ const RestaurantDetail = () => {
           </div>
         </div>
 
-        {/* Menu Section */}
-        <div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white mb-6">Menu</h2>
-          {singleRestaurant.menus && singleRestaurant.menus.length > 0 ? (
-            <AvailableMenu menus={singleRestaurant.menus} />
-          ) : (
-            <div className="flex flex-col items-center justify-center text-center py-24 px-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/30">
-              <div className="h-14 w-14 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center mb-4">
-                <UtensilsCrossed className="h-7 w-7 text-orange-500" />
-              </div>
-              <p className="text-gray-600 dark:text-gray-300 font-medium">No menu items available yet</p>
-              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Check back soon for new dishes</p>
-            </div>
-          )}
-        </div>
+       {/* Menu Section */}
+<div>
+  <h2 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white mb-6">Menu</h2>
+  {singleRestaurant.menus && singleRestaurant.menus.length > 0 ? (
+    <AvailableMenu
+      menus={singleRestaurant.menus}
+      restaurant={singleRestaurant}
+    />
+  ) : (
+    <div className="flex flex-col items-center justify-center text-center py-24 px-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/30">
+      <div className="h-14 w-14 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center mb-4">
+        <UtensilsCrossed className="h-7 w-7 text-orange-500" />
+      </div>
+      <p className="text-gray-600 dark:text-gray-300 font-medium">No menu items available yet</p>
+      <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Check back soon for new dishes</p>
+    </div>
+  )}
+</div>
 
         {/* Reviews Section */}
         <div className="mt-12">

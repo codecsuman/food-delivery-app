@@ -2,8 +2,6 @@ import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom"
 import { useEffect } from "react";
 import Login from "./auth/Login";
 import Signup from "./auth/Signup";
-import ForgotPassword from "./auth/ForgotPassword";
-import ResetPassword from "./auth/ResetPassword";
 import VerifyEmail from "./auth/VerifyEmail";
 import Home from "./components/Home";
 import MainLayout from "./layout/MainLayout";
@@ -142,18 +140,6 @@ const appRouter = createBrowserRouter([
         <Signup />
       </AuthenticatedUser>
     ),
-  },
-  {
-    path: "/forgot-password",
-    element: (
-      <AuthenticatedUser>
-        <ForgotPassword />
-      </AuthenticatedUser>
-    ),
-  },
-  {
-    path: "/reset-password/:token",
-    element: <ResetPassword />,
   },
   {
     path: "/verify-email",

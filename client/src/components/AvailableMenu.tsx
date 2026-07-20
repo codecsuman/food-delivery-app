@@ -1,13 +1,23 @@
-import { MenuItem } from "@/types/restaurantType";
+import { MenuItem, Restaurant } from "@/types/restaurantType";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardFooter } from "./ui/card";
 import { useCartStore } from "@/store/useCartStore";
+import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { useNavigate } from "react-router-dom";
 import { Plus, Check, UtensilsCrossed, Loader2 } from "lucide-react";
 import { useState } from "react";
 
-const AvailableMenu = ({ menus, loading }: { menus: MenuItem[]; loading?: boolean }) => {
+const AvailableMenu = ({
+  menus,
+  restaurant,
+  loading,
+}: {
+  menus: MenuItem[];
+  restaurant?: Restaurant;
+  loading?: boolean;
+}) => {
   const { addToCart, cart } = useCartStore();
+  const { setRestaurant } = useRestaurantStore();
   const navigate = useNavigate();
   const [, setAddedItems] = useState<Set<string>>(new Set());
   const [addingId, setAddingId] = useState<string | null>(null);
@@ -18,6 +28,7 @@ const AvailableMenu = ({ menus, loading }: { menus: MenuItem[]; loading?: boolea
   const handleAddToCart = async (menu: MenuItem) => {
     if (addingId === menu._id || isInCart(menu._id)) return;
     setAddingId(menu._id);
+    if (restaurant) setRestaurant(restaurant); // ✅ save restaurant before cart update
     addToCart(menu);
     setAddedItems((prev) => new Set(prev).add(menu._id));
     setTimeout(() => {
@@ -29,6 +40,7 @@ const AvailableMenu = ({ menus, loading }: { menus: MenuItem[]; loading?: boolea
   const handleOrderDirectly = async (menu: MenuItem) => {
     if (orderingId === menu._id) return;
     setOrderingId(menu._id);
+    if (restaurant) setRestaurant(restaurant); // ✅ save restaurant before cart update
     addToCart(menu);
     setTimeout(() => {
       setOrderingId(null);

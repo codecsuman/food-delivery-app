@@ -28,6 +28,11 @@ export const useRestaurantStore = create<RestaurantState>()(
       restaurantOrder: [],
       filterOptions: { cuisines: [], dishes: [] },
 
+      // ✅ NEW: manually set the currently selected restaurant
+      setRestaurant: (restaurant) => {
+        set({ restaurant });
+      },
+
       createRestaurant: async (formData: FormData) => {
         try {
           set({ loading: true });
@@ -337,7 +342,12 @@ export const useRestaurantStore = create<RestaurantState>()(
     {
       name: "restaurant-store",
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ appliedFilter: state.appliedFilter }),
+      // ✅ now also persists the selected restaurant + singleRestaurant across refresh
+      partialize: (state) => ({
+        appliedFilter: state.appliedFilter,
+        restaurant: state.restaurant,
+        singleRestaurant: state.singleRestaurant,
+      }),
     },
   ),
 );

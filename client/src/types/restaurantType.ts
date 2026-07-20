@@ -70,4 +70,5 @@ export type RestaurantState = {
   getUserRestaurants: () => Promise<void>;
   getAllRestaurants: () => Promise<void>;
   deleteRestaurant: (id: string) => Promise<boolean>;
+  setRestaurant: (restaurant: Restaurant | null) => void; // ✅ added
 };

@@ -13,7 +13,7 @@ const Login = () => {
     password: "",
   });
   const [errors, setErrors] = useState<Partial<LoginInputState>>({});
-const { loading, login } = useUserStore();
+  const { loading, login } = useUserStore();
   const navigate = useNavigate();
 
   const changeEventHandler = (e: ChangeEvent<HTMLInputElement>) => {
@@ -27,7 +27,7 @@ const { loading, login } = useUserStore();
 
   const loginSubmitHandler = async (e: FormEvent) => {
     e.preventDefault();
-    
+
     // Validate with Zod
     const result = userLoginSchema.safeParse(input);
     if (!result.success) {
@@ -100,7 +100,7 @@ const { loading, login } = useUserStore();
         </div>
 
         {/* Submit Button */}
-        <div className="mb-4">
+        <div className="mb-6">
           {loading ? (
             <Button disabled className="w-full h-12 bg-orange-500 hover:bg-orange-600">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Please wait
@@ -115,15 +115,7 @@ const { loading, login } = useUserStore();
           )}
         </div>
 
-        {/* Forgot Password */}
-        <div className="mb-6 text-right">
-          <Link
-            to="/forgot-password"
-            className="text-sm text-orange-500 hover:text-orange-600 hover:underline"
-          >
-            Forgot Password?
-          </Link>
-        </div>
+        {/* Forgot Password link removed — feature not enabled for this deployment */}
 
         <Separator className="bg-gray-200 dark:bg-gray-700" />
 

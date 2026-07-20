@@ -3,68 +3,92 @@ dotenv.config();
 
 import { MailtrapClient } from "mailtrap";
 
-const isProduction = process.env.NODE_ENV === "production";
+// ===============================
+// Environment Variables
+// ===============================
+const MAILTRAP_API_TOKEN = process.env.MAILTRAP_API_TOKEN;
+const MAILTRAP_SENDER_EMAIL =
+  process.env.MAILTRAP_SENDER_EMAIL || "hello@demomailtrap.com";
 
-// Check if MAILTRAP_API_TOKEN is available
-const hasMailtrapToken = !!process.env.MAILTRAP_API_TOKEN;
+// ===============================
+// Mailtrap Client
+// ===============================
+let client: MailtrapClient | any;
 
-let client: MailtrapClient;
-
-if (!hasMailtrapToken) {
-  console.log(
-    "[Mailtrap] MAILTRAP_API_TOKEN not set — emails will be logged to console.",
+if (!MAILTRAP_API_TOKEN) {
+  console.warn(
+    "⚠️ MAILTRAP_API_TOKEN is missing. Emails will only be logged to the console.",
   );
 
-  // Create a dummy client that logs emails instead of sending
   client = {
     send: async (email: any) => {
-      console.log(`\n========== EMAIL LOG ==========`);
-      console.log(`To: ${email.to?.[0]?.email}`);
-      console.log(`Subject: ${email.subject}`);
-      console.log(`From: ${email.from?.email} (${email.from?.name})`);
-      console.log(`================================\n`);
+      console.log("\n========== EMAIL LOG ==========");
+      console.log("To:", email.to?.map((r: any) => r.email).join(", "));
+      console.log("Subject:", email.subject);
+      console.log("From:", email.from?.email);
+      console.log("================================\n");
+
       return { success: true };
     },
-  } as any;
+  };
 } else {
-  console.log("[Mailtrap] Using real Mailtrap client.");
+  console.log("✅ Mailtrap client initialized.");
 
-  client = isProduction
-    ? new MailtrapClient({
-        token: process.env.MAILTRAP_API_TOKEN!,
-      })
-    : new MailtrapClient({
-        token: process.env.MAILTRAP_API_TOKEN!,
-        // @ts-ignore — sandbox is valid at runtime
-        sandbox: true,
-        testInboxId: Number(process.env.MAILTRAP_TEST_INBOX_ID) || undefined,
-      });
+  client = new MailtrapClient({
+    token: MAILTRAP_API_TOKEN,
+  });
 }
 
 export { client };
 
+// ===============================
+// Sender
+// ===============================
 export const sender = {
-  email: process.env.MAILTRAP_SENDER_EMAIL || "mailtrap@demomailtrap.com",
+  email: MAILTRAP_SENDER_EMAIL,
   name: "Suman Food",
 };
 
-// Email type
-interface EmailPayload {
-  from: { email: string; name: string };
-  to: { email: string }[];
+// ===============================
+// Email Payload Type
+// ===============================
+export interface EmailPayload {
+  from: {
+    email: string;
+    name: string;
+  };
+  to: {
+    email: string;
+  }[];
   subject: string;
   html: string;
   category?: string;
 }
 
-// Helper to send email with error handling
-export const sendEmail = async (email: EmailPayload): Promise<void> => {
+// ===============================
+// Send Email Helper
+// ===============================
+export const sendEmail = async (email: EmailPayload): Promise<boolean> => {
   try {
     await client.send(email);
-    if (hasMailtrapToken) {
-      console.log(`✅ Email sent to ${email.to[0].email}`);
-    }
+
+    console.log(`✅ Email sent successfully to ${email.to[0].email}`);
+
+    return true;
   } catch (error: any) {
-    console.error("❌ Failed to send email:", error.message || error);
+    console.error("\n❌ Mailtrap Email Error");
+    console.error("Message:", error.message);
+
+    if (error.status) {
+      console.error("Status:", error.status);
+    }
+
+    if (error.response?.data) {
+      console.error("Response:", error.response.data);
+    }
+
+    console.error(error);
+
+    return false;
   }
 };
