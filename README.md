@@ -407,12 +407,4 @@ Distributed under the **ISC License**.
 
 [![GitHub Stars](https://img.shields.io/github/stars/codecsuman/food-delivery-app?style=for-the-badge&logo=github&color=yellow)](https://github.com/codecsuman/food-delivery-app/stargazers)
 
-<<<<<<< HEAD
-</div>
-EOF
-git add README.md
-git commit -m "docs: update README with real-time filters, full API reference, and roadmap"
-git push
-=======
-</div>
->>>>>>> 1412f2a (Updated login page and fixed bugs)
+
