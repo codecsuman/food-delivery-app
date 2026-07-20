@@ -37,7 +37,7 @@ export const getOrders = async (req, res) => {
             .json({ success: false, message: "Internal server error" });
     }
 };
-// ======================= GET ORDER BY ID =======================
+// ======================= GET ORDER BY ID (FIXED) =======================
 export const getOrderById = async (req, res) => {
     try {
         const { orderId } = req.params;
@@ -47,14 +47,18 @@ export const getOrderById = async (req, res) => {
                 .json({ success: false, message: "Invalid order ID" });
         }
         const order = await Order.findById(orderId)
-            .populate("restaurant", "restaurantName imageUrl")
+            .populate("restaurant", "restaurantName imageUrl user lat lng deliveryTime deliveryPrice")
             .populate("user", "fullname email");
         if (!order) {
             return res
                 .status(404)
                 .json({ success: false, message: "Order not found" });
         }
-        if (order.user.toString() !== req.id) {
+        // FIX: Handle both populated (object) and unpopulated (ObjectId) user field
+        const orderUserId = order.user._id?.toString() || order.user.toString();
+        const isOrderOwner = orderUserId === req.id;
+        const isRestaurantOwner = order.restaurant?.user?.toString() === req.id;
+        if (!isOrderOwner && !isRestaurantOwner) {
             return res
                 .status(403)
                 .json({ success: false, message: "Not authorized" });
@@ -257,7 +261,7 @@ export const createLineItems = (checkoutSessionRequest, menuItems) => {
     });
     return lineItems;
 };
-// ======================= GET ORDER BY SESSION ID =======================
+// ======================= GET ORDER BY SESSION ID (FIXED) =======================
 export const getOrderBySessionId = async (req, res) => {
     try {
         const { sessionId } = req.params;
@@ -268,15 +272,18 @@ export const getOrderBySessionId = async (req, res) => {
                 .json({ success: false, message: "Order not found for this session" });
         }
         const order = await Order.findById(session.metadata.orderId)
-            .populate("restaurant", "restaurantName imageUrl")
+            .populate("restaurant", "restaurantName imageUrl user lat lng deliveryTime deliveryPrice")
             .populate("user", "fullname email");
         if (!order) {
             return res
                 .status(404)
                 .json({ success: false, message: "Order not found" });
         }
-        // ✅ Authorization check
-        if (order.user.toString() !== req.id) {
+        // FIX: Same authorization logic as getOrderById
+        const orderUserId = order.user._id?.toString() || order.user.toString();
+        const isOrderOwner = orderUserId === req.id;
+        const isRestaurantOwner = order.restaurant?.user?.toString() === req.id;
+        if (!isOrderOwner && !isRestaurantOwner) {
             return res
                 .status(403)
                 .json({ success: false, message: "Not authorized" });

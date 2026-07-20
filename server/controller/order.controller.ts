@@ -19,6 +19,8 @@ type CheckoutSessionRequest = {
     email: string;
     address: string;
     city: string;
+    lat?: number;
+    lng?: number;
   };
   restaurantId: string;
 };
@@ -62,7 +64,7 @@ export const getOrders = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= GET ORDER BY ID =======================
+// ======================= GET ORDER BY ID (FIXED) =======================
 export const getOrderById = async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
@@ -74,7 +76,10 @@ export const getOrderById = async (req: Request, res: Response) => {
     }
 
     const order = await Order.findById(orderId)
-      .populate("restaurant", "restaurantName imageUrl")
+      .populate(
+        "restaurant",
+        "restaurantName imageUrl user lat lng deliveryTime deliveryPrice",
+      )
       .populate("user", "fullname email");
 
     if (!order) {
@@ -83,7 +88,15 @@ export const getOrderById = async (req: Request, res: Response) => {
         .json({ success: false, message: "Order not found" });
     }
 
-    if (order.user.toString() !== req.id) {
+    // FIX: Handle both populated (object) and unpopulated (ObjectId) user field
+    const orderUserId =
+      (order.user as any)._id?.toString() || (order.user as any).toString();
+
+    const isOrderOwner = orderUserId === req.id;
+    const isRestaurantOwner =
+      (order.restaurant as any)?.user?.toString() === req.id;
+
+    if (!isOrderOwner && !isRestaurantOwner) {
       return res
         .status(403)
         .json({ success: false, message: "Not authorized" });
@@ -330,7 +343,7 @@ export const createLineItems = (
   return lineItems;
 };
 
-// ======================= GET ORDER BY SESSION ID =======================
+// ======================= GET ORDER BY SESSION ID (FIXED) =======================
 export const getOrderBySessionId = async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
@@ -343,7 +356,10 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
     }
 
     const order = await Order.findById(session.metadata.orderId)
-      .populate("restaurant", "restaurantName imageUrl")
+      .populate(
+        "restaurant",
+        "restaurantName imageUrl user lat lng deliveryTime deliveryPrice",
+      )
       .populate("user", "fullname email");
 
     if (!order) {
@@ -352,8 +368,14 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
         .json({ success: false, message: "Order not found" });
     }
 
-    // ✅ Authorization check
-    if (order.user.toString() !== req.id) {
+    // FIX: Same authorization logic as getOrderById
+    const orderUserId =
+      (order.user as any)._id?.toString() || (order.user as any).toString();
+    const isOrderOwner = orderUserId === req.id;
+    const isRestaurantOwner =
+      (order.restaurant as any)?.user?.toString() === req.id;
+
+    if (!isOrderOwner && !isRestaurantOwner) {
       return res
         .status(403)
         .json({ success: false, message: "Not authorized" });
