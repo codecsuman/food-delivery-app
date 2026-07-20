@@ -1,4 +1,5 @@
 import { CheckoutSessionRequest, OrderState } from "@/types/orderType";
+import { useCartStore } from "@/store/useCartStore"; // ADD THIS IMPORT
 import axios from "axios";
 import { toast } from "sonner";
 import { create } from "zustand";
@@ -36,11 +37,13 @@ export const useOrderStore = create<OrderState>()(
           if (response.data.success) {
             if (response.data.paymentMethod === "cod") {
               toast.success(response.data.message);
+              useCartStore.getState().clearCart(); // ADD THIS LINE - clear cart after COD success
               set((state) => ({
                 orders: [response.data.order, ...state.orders],
               }));
               window.location.href = `/order/success?order_id=${response.data.order._id}`;
             } else if (response.data.session?.url) {
+              useCartStore.getState().clearCart(); // ADD THIS LINE - clear cart before Stripe redirect
               window.location.href = response.data.session.url;
             }
           } else {

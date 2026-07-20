@@ -97,10 +97,10 @@ const Navbar = () => {
                 <span className="absolute left-3 right-3 -bottom-0.5 h-0.5 bg-gradient-to-r from-orange-500 to-amber-500 scale-x-0 group-hover:scale-x-100 origin-left transition-transform duration-300 rounded-full" />
               </Link>
               <Link
-                to="/order/success"
+                to="/my-orders"
                 className="relative px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-orange-500 dark:hover:text-orange-400 font-medium text-sm transition-colors group"
               >
-                Orders
+                My Orders
                 <span className="absolute left-3 right-3 -bottom-0.5 h-0.5 bg-gradient-to-r from-orange-500 to-amber-500 scale-x-0 group-hover:scale-x-100 origin-left transition-transform duration-300 rounded-full" />
               </Link>
               <Link
@@ -310,9 +310,9 @@ const MobileNavbar = () => {
             <User className="w-5 h-5" />
             <span>Profile</span>
           </Link>
-          <Link to="/order/success" className={linkClass}>
+          <Link to="/my-orders" className={linkClass}>
             <HandPlatter className="w-5 h-5" />
-            <span>Orders</span>
+            <span>My Orders</span>
           </Link>
           <Link to="/search" className={linkClass}>
             <Store className="w-5 h-5" />

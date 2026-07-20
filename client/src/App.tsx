@@ -13,6 +13,7 @@ import Restaurant from "./admin/Restaurant";
 import AddMenu from "./admin/AddMenu";
 import Orders from "./admin/Orders";
 import Success from "./components/Success";
+import MyOrders from "./components/MyOrders";  // ADD THIS IMPORT
 import Loading from "./components/Loading";
 
 // Static pages
@@ -91,6 +92,11 @@ const appRouter = createBrowserRouter([
       {
         path: "/order/success",
         element: <Success />,
+      },
+      // ADDED: My Orders page - shows ALL orders
+      {
+        path: "/my-orders",
+        element: <MyOrders />,
       },
       // Static pages
       {

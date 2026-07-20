@@ -1,4 +1,3 @@
-cat > README.md << 'EOF'
 <div align="center">
 
 # 🍔 Suman Food
@@ -82,6 +81,7 @@ cat > README.md << 'EOF'
 - 🔐 Secure signup, login & email verification
 - 🔎 Real-time restaurant search with debounced input
 - 🎛️ Live filters — cuisine, dish/food name, price range & location, pulled straight from the database
+- 🌟 Featured Dishes & Restaurants carousel on the home page *(Coming Soon)*
 - 🛒 Add to cart & Stripe checkout
 - 📦 Track order status in real time
 - 🌗 Light / Dark mode toggle
@@ -93,6 +93,7 @@ cat > README.md << 'EOF'
 ### 🧑‍🍳 For Restaurant Owners
 - 🏪 Create & manage your own restaurant
 - 📋 Add / edit / delete menu items with images
+- 🌟 Mark menu items or your restaurant as "Featured" *(Coming Soon)*
 - 🖼️ Cloudinary-powered image uploads
 - 📬 Manage incoming orders live
 - 💳 Secure Stripe payment processing
@@ -313,6 +314,7 @@ MAILTRAP_TEST_INBOX_ID=your_inbox_id
 
 Planned features, not yet built:
 
+- [ ] **Featured Restaurants & Menu Items** — restaurant owners get a toggle to mark items/restaurants as "Featured," surfaced in a home page carousel
 - [ ] Separate navbar views for restaurant owners (Dashboard/My Restaurants/Orders) vs. regular customers (Home/Explore/Orders)
 - [ ] "Order Now" button on menu items — skip the cart and go straight to checkout for a single item
 - [ ] Cash on Delivery (COD) as a payment option alongside Stripe
@@ -405,8 +407,12 @@ Distributed under the **ISC License**.
 
 [![GitHub Stars](https://img.shields.io/github/stars/codecsuman/food-delivery-app?style=for-the-badge&logo=github&color=yellow)](https://github.com/codecsuman/food-delivery-app/stargazers)
 
+<<<<<<< HEAD
 </div>
 EOF
 git add README.md
 git commit -m "docs: update README with real-time filters, full API reference, and roadmap"
 git push
+=======
+</div>
+>>>>>>> 1412f2a (Updated login page and fixed bugs)

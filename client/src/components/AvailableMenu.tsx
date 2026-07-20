@@ -16,7 +16,7 @@ const AvailableMenu = ({
   restaurant?: Restaurant;
   loading?: boolean;
 }) => {
-  const { addToCart, cart } = useCartStore();
+  const { addToCart, cart, clearCart } = useCartStore();  // ADD clearCart HERE
   const { setRestaurant } = useRestaurantStore();
   const navigate = useNavigate();
   const [, setAddedItems] = useState<Set<string>>(new Set());
@@ -25,8 +25,30 @@ const AvailableMenu = ({
 
   const isInCart = (menuId: string) => cart.some((item) => item._id === menuId);
 
+  // ADD THIS HELPER: Check if adding from a different restaurant
+  const checkRestaurantMismatch = (): boolean => {
+    if (cart.length === 0) return true; // Cart empty, no conflict
+    if (!restaurant) return true; // No restaurant context
+    if (!cart[0].restaurant) return true; // Cart items have no restaurant info
+    if (cart[0].restaurant === restaurant._id) return true; // Same restaurant
+
+    // Different restaurant - ask user
+    const confirmSwitch = confirm(
+      "Your cart has items from another restaurant. Starting a new order will clear your current cart. Continue?"
+    );
+    if (confirmSwitch) {
+      clearCart();
+      return true;
+    }
+    return false;
+  };
+
   const handleAddToCart = async (menu: MenuItem) => {
     if (addingId === menu._id || isInCart(menu._id)) return;
+
+    // ADD THIS: Check restaurant mismatch before adding
+    if (!checkRestaurantMismatch()) return;
+
     setAddingId(menu._id);
     if (restaurant) setRestaurant(restaurant); // ✅ save restaurant before cart update
     addToCart(menu);
@@ -39,6 +61,10 @@ const AvailableMenu = ({
 
   const handleOrderDirectly = async (menu: MenuItem) => {
     if (orderingId === menu._id) return;
+
+    // ADD THIS: Check restaurant mismatch before ordering
+    if (!checkRestaurantMismatch()) return;
+
     setOrderingId(menu._id);
     if (restaurant) setRestaurant(restaurant); // ✅ save restaurant before cart update
     addToCart(menu);

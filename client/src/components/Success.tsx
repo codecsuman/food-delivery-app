@@ -1,4 +1,4 @@
-import { IndianRupee, CheckCircle, Package, MapPin, User, Mail, Loader2 } from "lucide-react";
+import { IndianRupee, CheckCircle, Package, MapPin, User, Mail, Loader2, ListOrdered } from "lucide-react";
 import { Separator } from "./ui/separator";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "./ui/button";
@@ -8,16 +8,23 @@ import { CartItem } from "@/types/cartType";
 
 const Success = () => {
   const [searchParams] = useSearchParams();
-  const { orders, getOrderDetails, getOrderBySessionId } = useOrderStore();
+  const { orders, getOrderDetails, getOrderBySessionId, getOrderById } = useOrderStore();
   const [currentOrder, setCurrentOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchOrder = async () => {
       const sessionId = searchParams.get("session_id");
+      const orderId = searchParams.get("order_id");
 
       if (sessionId) {
         const order = await getOrderBySessionId(sessionId);
+        if (order) {
+          setCurrentOrder(order);
+        }
+      } else if (orderId) {
+        // ADDED: Fetch specific order by ID for order history view
+        const order = await getOrderById(orderId);
         if (order) {
           setCurrentOrder(order);
         }
@@ -28,9 +35,14 @@ const Success = () => {
     };
 
     fetchOrder();
-  }, [searchParams, getOrderBySessionId, getOrderDetails]);
+  }, [searchParams, getOrderBySessionId, getOrderDetails, getOrderById]);
 
-  const order = currentOrder || orders[0];
+  // CHANGED: Use currentOrder first, then find by order_id, then fallback to orders[0]
+  const orderId = searchParams.get("order_id");
+  const order =
+    currentOrder ||
+    (orderId ? orders.find((o) => o._id === orderId) : null) ||
+    orders[0];
 
   if (loading) {
     return (
@@ -200,19 +212,20 @@ const Success = () => {
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex gap-4">
-          <Link to="/" className="flex-1">
+        {/* Actions - ADDED View All Orders button */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          <Link to="/my-orders" className="flex-1">
             <Button className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 h-12 text-white font-semibold rounded-lg shadow-md shadow-orange-500/20">
-              Continue Shopping
+              <ListOrdered className="mr-2 h-4 w-4" />
+              View All Orders
             </Button>
           </Link>
-          <Link to="/search" className="flex-1">
+          <Link to="/" className="flex-1">
             <Button
               variant="outline"
               className="w-full h-12 rounded-lg border-gray-200 dark:border-gray-600 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-600 dark:hover:text-orange-400 hover:border-orange-200"
             >
-              Explore Restaurants
+              Continue Shopping
             </Button>
           </Link>
         </div>
