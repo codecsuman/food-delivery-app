@@ -46,24 +46,35 @@ const FilterPage = () => {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 h-fit sticky top-24">
       {/* Scoped, cross-browser scrollbar for the option lists below.
-          Kept local (not global CSS) so it only affects this component. */}
+          Kept local (not global CSS) so it only affects this component.
+          overflow-y: scroll (not auto) + a visible track means the
+          scrollbar is always on screen, not just on hover — so it's
+          obvious each box scrolls on its own without touching the page. */}
       <style>{`
         .filter-scroll {
           scrollbar-width: thin;
-          scrollbar-color: rgb(253 186 116) transparent; /* orange-300 */
+          scrollbar-color: rgb(249 115 22) rgb(243 244 246); /* orange-500 on gray-100 */
+          scrollbar-gutter: stable;
         }
         .filter-scroll::-webkit-scrollbar {
-          width: 6px;
+          width: 8px;
         }
         .filter-scroll::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .filter-scroll::-webkit-scrollbar-thumb {
-          background-color: rgb(253 186 116);
+          background: rgb(243 244 246); /* gray-100 */
           border-radius: 9999px;
         }
-        .dark .filter-scroll::-webkit-scrollbar-thumb {
-          background-color: rgb(120 53 15);
+        .filter-scroll::-webkit-scrollbar-thumb {
+          background-color: rgb(249 115 22); /* orange-500 */
+          border-radius: 9999px;
+        }
+        .filter-scroll::-webkit-scrollbar-thumb:hover {
+          background-color: rgb(234 88 12); /* orange-600 */
+        }
+        .dark .filter-scroll::-webkit-scrollbar-track {
+          background: rgb(55 65 81); /* gray-700 */
+        }
+        .dark .filter-scroll {
+          scrollbar-color: rgb(249 115 22) rgb(55 65 81);
         }
       `}</style>
 
@@ -108,7 +119,7 @@ const FilterPage = () => {
                 None yet
               </p>
             ) : (
-              <div className="filter-scroll max-h-48 overflow-y-auto pr-1 space-y-1.5">
+              <div className="filter-scroll h-44 overflow-y-scroll pr-2 space-y-1.5 rounded-lg bg-gray-50/60 dark:bg-gray-900/20 p-1.5">
                 {section.options.map((option) => {
                   const isChecked = appliedFilter.includes(option.label);
                   return (
