@@ -36,50 +36,37 @@ const FilterPage = () => {
     setAppliedFilter(value);
   };
 
-  const renderOptionGroup = (options: FilterOptionsState[]) => {
-    if (options.length === 0) {
-      return (
-        <p className="text-xs text-gray-400 dark:text-gray-500 px-2.5 py-1.5">
-          None yet
-        </p>
-      );
-    }
+  const sections = [
+    { title: "Cuisine", options: cuisineOptions },
+    { title: "Popular Dishes", options: dishOptions },
+  ];
 
-    return options.map((option) => {
-      const isChecked = appliedFilter.includes(option.label);
-      return (
-        <div
-          key={option.id}
-          className={`flex items-center space-x-3 p-2.5 rounded-xl cursor-pointer transition-colors ${
-            isChecked
-              ? "bg-orange-50 dark:bg-orange-500/10"
-              : "hover:bg-gray-50 dark:hover:bg-gray-700"
-          }`}
-          onClick={() => appliedFilterHandler(option.label)}
-        >
-          <Checkbox
-            id={option.id}
-            checked={isChecked}
-            onCheckedChange={() => appliedFilterHandler(option.label)}
-            className="border-gray-300 dark:border-gray-600 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
-          />
-          <Label
-            htmlFor={option.id}
-            className={`text-sm cursor-pointer flex-1 transition-colors ${
-              isChecked
-                ? "font-semibold text-orange-600 dark:text-orange-400"
-                : "font-medium text-gray-700 dark:text-gray-300"
-            }`}
-          >
-            {option.label}
-          </Label>
-        </div>
-      );
-    });
-  };
+  const hasActiveFilters = appliedFilter.length > 0;
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 h-fit">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 h-fit sticky top-24">
+      {/* Scoped, cross-browser scrollbar for the option lists below.
+          Kept local (not global CSS) so it only affects this component. */}
+      <style>{`
+        .filter-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: rgb(253 186 116) transparent; /* orange-300 */
+        }
+        .filter-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .filter-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .filter-scroll::-webkit-scrollbar-thumb {
+          background-color: rgb(253 186 116);
+          border-radius: 9999px;
+        }
+        .dark .filter-scroll::-webkit-scrollbar-thumb {
+          background-color: rgb(120 53 15);
+        }
+      `}</style>
+
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2.5">
           <div className="h-9 w-9 rounded-xl bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center">
@@ -94,7 +81,7 @@ const FilterPage = () => {
             </p>
           </div>
         </div>
-        {appliedFilter.length > 0 && (
+        {hasActiveFilters && (
           <Button
             variant="ghost"
             size="sm"
@@ -107,21 +94,63 @@ const FilterPage = () => {
         )}
       </div>
 
-      <div className="mb-2">
-        <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
-          Cuisine
-        </p>
-        <div className="space-y-1.5">{renderOptionGroup(cuisineOptions)}</div>
+      <div className="space-y-6">
+        {sections.map((section, index) => (
+          <div key={section.title} className="group">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+                {section.title}
+              </h2>
+            </div>
+
+            {section.options.length === 0 ? (
+              <p className="text-xs text-gray-400 dark:text-gray-500 px-2.5 py-1.5">
+                None yet
+              </p>
+            ) : (
+              <div className="filter-scroll max-h-48 overflow-y-auto pr-1 space-y-1.5">
+                {section.options.map((option) => {
+                  const isChecked = appliedFilter.includes(option.label);
+                  return (
+                    <div
+                      key={option.id}
+                      className={`flex items-center space-x-3 p-2.5 rounded-xl cursor-pointer transition-colors ${
+                        isChecked
+                          ? "bg-orange-50 dark:bg-orange-500/10"
+                          : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                      }`}
+                      onClick={() => appliedFilterHandler(option.label)}
+                    >
+                      <Checkbox
+                        id={option.id}
+                        checked={isChecked}
+                        onCheckedChange={() => appliedFilterHandler(option.label)}
+                        className="border-gray-300 dark:border-gray-600 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+                      />
+                      <Label
+                        htmlFor={option.id}
+                        className={`text-sm cursor-pointer flex-1 transition-colors ${
+                          isChecked
+                            ? "font-semibold text-orange-600 dark:text-orange-400"
+                            : "font-medium text-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        {option.label}
+                      </Label>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {index < sections.length - 1 && (
+              <hr className="mt-5 border-gray-100 dark:border-gray-700" />
+            )}
+          </div>
+        ))}
       </div>
 
-      <div className="mt-5">
-        <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
-          Popular dishes
-        </p>
-        <div className="space-y-1.5">{renderOptionGroup(dishOptions)}</div>
-      </div>
-
-      {appliedFilter.length > 0 && (
+      {hasActiveFilters && (
         <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
           <p className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2.5">
             {appliedFilter.length} filter{appliedFilter.length > 1 ? "s" : ""} applied
