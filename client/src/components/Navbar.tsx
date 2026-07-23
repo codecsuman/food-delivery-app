@@ -25,7 +25,8 @@ import {
   User,
   UtensilsCrossed,
   Store,
-  Home,  // ← FIXED: Added Home import
+  Home,
+  Navigation,  // ← ADDED for Track Order icon
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import {
@@ -101,6 +102,14 @@ const Navbar = () => {
                 className="relative px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-orange-500 dark:hover:text-orange-400 font-medium text-sm transition-colors group"
               >
                 My Orders
+                <span className="absolute left-3 right-3 -bottom-0.5 h-0.5 bg-gradient-to-r from-orange-500 to-amber-500 scale-x-0 group-hover:scale-x-100 origin-left transition-transform duration-300 rounded-full" />
+              </Link>
+              {/* ← ADDED: Track Order Link */}
+              <Link
+                to="/track-order/demo"
+                className="relative px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-orange-500 dark:hover:text-orange-400 font-medium text-sm transition-colors group"
+              >
+                Track Order
                 <span className="absolute left-3 right-3 -bottom-0.5 h-0.5 bg-gradient-to-r from-orange-500 to-amber-500 scale-x-0 group-hover:scale-x-100 origin-left transition-transform duration-300 rounded-full" />
               </Link>
               <Link
@@ -313,6 +322,11 @@ const MobileNavbar = () => {
           <Link to="/my-orders" className={linkClass}>
             <HandPlatter className="w-5 h-5" />
             <span>My Orders</span>
+          </Link>
+          {/* ← ADDED: Track Order in mobile menu */}
+          <Link to="/track-order/demo" className={linkClass}>
+            <Navigation className="w-5 h-5" />
+            <span>Track Order</span>
           </Link>
           <Link to="/search" className={linkClass}>
             <Store className="w-5 h-5" />

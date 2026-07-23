@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Navigate, useParams } from "react-router-dom";
 import { useEffect } from "react";
 import Login from "./auth/Login";
 import Signup from "./auth/Signup";
@@ -13,8 +13,13 @@ import Restaurant from "./admin/Restaurant";
 import AddMenu from "./admin/AddMenu";
 import Orders from "./admin/Orders";
 import Success from "./components/Success";
-import MyOrders from "./components/MyOrders";  // ADD THIS IMPORT
+import MyOrders from "./components/MyOrders";
 import Loading from "./components/Loading";
+
+// Map & Delivery Components
+import AddressPicker from "./components/AddressPicker";
+import LiveTracking from "./components/LiveTracking";
+import RestaurantDistanceChecker from "./components/RestaurantDistanceChecker";
 
 // Static pages
 import About from "./components/About";
@@ -24,6 +29,7 @@ import Terms from "./components/Terms";
 
 import { useUserStore } from "./store/useUserStore";
 import { useThemeStore } from "./store/useThemeStore";
+import { useOrderStore } from "./store/useOrderStore";
 
 // ======================= ROUTE GUARDS =======================
 
@@ -51,6 +57,29 @@ const AuthenticatedUser = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// ======================= LIVE TRACKING WRAPPER =======================
+
+function LiveTrackingPage() {
+  const { orderId } = useParams<{ orderId: string }>();
+  const { orders }: any = useOrderStore();
+  
+  const order = orders?.find((o: any) => o._id === orderId);
+  
+  // FIX: Handle restaurant as string or object, use any type
+  const restaurantCoords: [number, number] = (order as any)?.restaurant?.coordinates || [88.3639, 22.5726];
+  const customerCoords: [number, number] = (order as any)?.deliveryAddress?.coordinates || [88.3639, 22.5726];
+  
+  return (
+    <div className="max-w-4xl mx-auto py-10 px-4">
+      <LiveTracking 
+        orderId={orderId || "demo"} 
+        restaurantCoords={restaurantCoords} 
+        customerCoords={customerCoords} 
+      />
+    </div>
+  );
+}
+
 // ======================= ROUTER =======================
 
 const appRouter = createBrowserRouter([
@@ -71,12 +100,10 @@ const appRouter = createBrowserRouter([
         path: "/profile",
         element: <Profile />,
       },
-      // FIXED: Search without text (browse all)
       {
         path: "/search",
         element: <SearchPage />,
       },
-      // Search with text
       {
         path: "/search/:text",
         element: <SearchPage />,
@@ -93,10 +120,38 @@ const appRouter = createBrowserRouter([
         path: "/order/success",
         element: <Success />,
       },
-      // ADDED: My Orders page - shows ALL orders
       {
         path: "/my-orders",
         element: <MyOrders />,
+      },
+      // ===== MAP & DELIVERY ROUTES =====
+      {
+        path: "/address-picker",
+        element: (
+          <div className="max-w-2xl mx-auto py-10 px-4">
+            <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">
+              Pick Delivery Address
+            </h1>
+            <AddressPicker 
+              onAddressSelect={(data) => {
+                console.log("Selected:", data);
+                localStorage.setItem("selectedAddress", JSON.stringify(data));
+              }} 
+            />
+          </div>
+        ),
+      },
+      {
+        path: "/track-order/:orderId",
+        element: <LiveTrackingPage />,
+      },
+      {
+        path: "/admin/distance-checker",
+        element: (
+          <div className="max-w-2xl mx-auto py-10 px-4">
+            <RestaurantDistanceChecker restaurantId="demo" />
+          </div>
+        ),
       },
       // Static pages
       {

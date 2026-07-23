@@ -10,7 +10,9 @@ import { CheckoutSessionRequest } from "@/types/orderType";
 import { useCartStore } from "@/store/useCartStore";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { useOrderStore } from "@/store/useOrderStore";
-import { Loader2, MapPin, CreditCard, Banknote } from "lucide-react";
+import { Loader2, MapPin, CreditCard, Banknote, Navigation } from "lucide-react";
+import AddressPicker from "./AddressPicker";
+import DeliveryTimeEstimator from "./DeliveryTimeEstimator";
 
 const CheckoutConfirmPage = ({
   open, setOpen,
@@ -23,6 +25,8 @@ const CheckoutConfirmPage = ({
   const { restaurant } = useRestaurantStore();
   const { createCheckoutSession, loading } = useOrderStore();
   const [paymentMethod, setPaymentMethod] = useState<"stripe" | "cod">("stripe");
+  const [useAddressPicker, setUseAddressPicker] = useState(false);
+  const [selectedAddress, setSelectedAddress] = useState<any>(null);
 
   const [input, setInput] = useState({
     name: "", email: "", address: "", city: "", country: "",
@@ -37,12 +41,33 @@ const CheckoutConfirmPage = ({
         city: user.city || "",
         country: user.country || "",
       });
+      // Check if we have a stored address from AddressPicker
+      const stored = localStorage.getItem("selectedAddress");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setSelectedAddress(parsed);
+        setInput(prev => ({
+          ...prev,
+          address: parsed.address,
+          city: parsed.formattedAddress?.split(",").slice(-3, -2)[0]?.trim() || prev.city,
+        }));
+      }
     }
   }, [user, open]);
 
   const changeEventHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setInput((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAddressSelect = (data: any) => {
+    setSelectedAddress(data);
+    setInput((prev) => ({
+      ...prev,
+      address: data.address,
+      city: data.formattedAddress?.split(",").slice(-3, -2)[0]?.trim() || prev.city,
+    }));
+    setUseAddressPicker(false);
   };
 
   const checkoutHandler = async (e: FormEvent<HTMLFormElement>) => {
@@ -112,74 +137,114 @@ const CheckoutConfirmPage = ({
           </div>
         </div>
 
-        <form onSubmit={checkoutHandler} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-gray-700 dark:text-gray-300 font-medium">Full Name</Label>
-            <Input type="text" name="name" value={input.name} onChange={changeEventHandler} placeholder="Your full name" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+        {/* Delivery Time Estimator */}
+        {selectedAddress && restaurant?._id && (
+          <div className="mb-4">
+            <DeliveryTimeEstimator 
+              restaurantId={restaurant._id}
+              customerCoords={{
+                address: selectedAddress.address,
+                pincode: selectedAddress.pincode,
+                coordinates: selectedAddress.coordinates,
+              }}
+            />
           </div>
-          <div className="space-y-2">
-            <Label className="text-gray-700 dark:text-gray-300 font-medium">Email</Label>
-            <Input disabled type="email" name="email" value={input.email} className="bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed rounded-lg" />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 font-medium"><MapPin className="w-3.5 h-3.5 text-gray-400" /> Address</Label>
-            <Input type="text" name="address" value={input.address} onChange={changeEventHandler} placeholder="Street address" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-gray-700 dark:text-gray-300 font-medium">City</Label>
-            <Input type="text" name="city" value={input.city} onChange={changeEventHandler} placeholder="City" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-gray-700 dark:text-gray-300 font-medium">Country</Label>
-            <Input type="text" name="country" value={input.country} onChange={changeEventHandler} placeholder="Country" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+        )}
+
+        {/* Address Input Toggle */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <Label className="text-gray-700 dark:text-gray-300 font-medium flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-orange-500" />
+              Delivery Address
+            </Label>
+            <button
+              type="button"
+              onClick={() => setUseAddressPicker(!useAddressPicker)}
+              className="text-sm text-orange-500 hover:text-orange-600 font-medium flex items-center gap-1"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              {useAddressPicker ? "Use Manual Input" : "Use Map Picker"}
+            </button>
           </div>
 
-          {/* Payment Method */}
-          <div className="space-y-2 md:col-span-2">
-            <Label className="text-gray-700 dark:text-gray-300 font-medium">Payment Method</Label>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("stripe")}
-                className={`flex-1 p-4 rounded-xl border-2 transition-all ${
-                  paymentMethod === "stripe"
-                    ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
-                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                }`}
-              >
-                <CreditCard className="w-6 h-6 mx-auto mb-2 text-orange-500" />
-                <p className="font-semibold text-sm text-gray-900 dark:text-white">Pay Online</p>
-                <p className="text-xs text-gray-400">Stripe / Card</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("cod")}
-                className={`flex-1 p-4 rounded-xl border-2 transition-all ${
-                  paymentMethod === "cod"
-                    ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
-                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                }`}
-              >
-                <Banknote className="w-6 h-6 mx-auto mb-2 text-orange-500" />
-                <p className="font-semibold text-sm text-gray-900 dark:text-white">Cash on Delivery</p>
-                <p className="text-xs text-gray-400">Pay when you receive</p>
-              </button>
-            </div>
-          </div>
+          {useAddressPicker ? (
+            <AddressPicker 
+              onAddressSelect={handleAddressSelect}
+              initialAddress={input.address}
+              initialPincode={user?.address?.match(/\d{6}/)?.[0] || ""}
+            />
+          ) : (
+            <form onSubmit={checkoutHandler} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-gray-700 dark:text-gray-300 font-medium">Full Name</Label>
+                <Input type="text" name="name" value={input.name} onChange={changeEventHandler} placeholder="Your full name" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-gray-700 dark:text-gray-300 font-medium">Email</Label>
+                <Input disabled type="email" name="email" value={input.email} className="bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed rounded-lg" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 font-medium"><MapPin className="w-3.5 h-3.5 text-gray-400" /> Address</Label>
+                <Input type="text" name="address" value={input.address} onChange={changeEventHandler} placeholder="Street address" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-gray-700 dark:text-gray-300 font-medium">City</Label>
+                <Input type="text" name="city" value={input.city} onChange={changeEventHandler} placeholder="City" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-gray-700 dark:text-gray-300 font-medium">Country</Label>
+                <Input type="text" name="country" value={input.country} onChange={changeEventHandler} placeholder="Country" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+              </div>
 
-          <DialogFooter className="col-span-1 md:col-span-2 pt-4">
-            {loading ? (
-              <Button disabled className="w-full bg-orange-500 h-12 rounded-lg">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...
-              </Button>
-            ) : (
-              <Button type="submit" className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 h-12 text-white font-semibold rounded-lg shadow-md shadow-orange-500/20">
-                <CreditCard className="mr-2 h-4 w-4" />
-                {paymentMethod === "cod" ? "Place Order (COD)" : "Continue To Payment"}
-              </Button>
-            )}
-          </DialogFooter>
-        </form>
+              {/* Payment Method */}
+              <div className="space-y-2 md:col-span-2">
+                <Label className="text-gray-700 dark:text-gray-300 font-medium">Payment Method</Label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("stripe")}
+                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+                      paymentMethod === "stripe"
+                        ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
+                        : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                    }`}
+                  >
+                    <CreditCard className="w-6 h-6 mx-auto mb-2 text-orange-500" />
+                    <p className="font-semibold text-sm text-gray-900 dark:text-white">Pay Online</p>
+                    <p className="text-xs text-gray-400">Stripe / Card</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("cod")}
+                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+                      paymentMethod === "cod"
+                        ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
+                        : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                    }`}
+                  >
+                    <Banknote className="w-6 h-6 mx-auto mb-2 text-orange-500" />
+                    <p className="font-semibold text-sm text-gray-900 dark:text-white">Cash on Delivery</p>
+                    <p className="text-xs text-gray-400">Pay when you receive</p>
+                  </button>
+                </div>
+              </div>
+
+              <DialogFooter className="col-span-1 md:col-span-2 pt-4">
+                {loading ? (
+                  <Button disabled className="w-full bg-orange-500 h-12 rounded-lg">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...
+                  </Button>
+                ) : (
+                  <Button type="submit" className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 h-12 text-white font-semibold rounded-lg shadow-md shadow-orange-500/20">
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    {paymentMethod === "cod" ? "Place Order (COD)" : "Continue To Payment"}
+                  </Button>
+                )}
+              </DialogFooter>
+            </form>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

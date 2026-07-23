@@ -4,7 +4,7 @@ const restaurantSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: [true, "User reference is required"],
-        index: true, // Keep index for performance, remove unique constraint
+        index: true,
     },
     restaurantName: {
         type: String,
@@ -69,16 +69,26 @@ const restaurantSchema = new mongoose.Schema({
         default: 0,
         min: [0, "Rating count cannot be negative"],
     },
+    location: {
+        type: {
+            type: String,
+            enum: ["Point"],
+            default: "Point",
+        },
+        coordinates: {
+            type: [Number],
+            default: [0, 0],
+        },
+    },
 }, { timestamps: true });
-// Text index for search
 restaurantSchema.index({
     restaurantName: "text",
     city: "text",
     country: "text",
 });
-// Compound and single indexes
 restaurantSchema.index({ cuisines: 1 });
 restaurantSchema.index({ city: 1, country: 1 });
 restaurantSchema.index({ deliveryTime: 1 });
 restaurantSchema.index({ createdAt: -1 });
+restaurantSchema.index({ location: "2dsphere" });
 export const Restaurant = mongoose.model("Restaurant", restaurantSchema);
