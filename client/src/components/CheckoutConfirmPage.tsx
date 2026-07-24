@@ -41,16 +41,19 @@ const CheckoutConfirmPage = ({
         city: user.city || "",
         country: user.country || "",
       });
-      // Check if we have a stored address from AddressPicker
       const stored = localStorage.getItem("selectedAddress");
       if (stored) {
-        const parsed = JSON.parse(stored);
-        setSelectedAddress(parsed);
-        setInput(prev => ({
-          ...prev,
-          address: parsed.address,
-          city: parsed.formattedAddress?.split(",").slice(-3, -2)[0]?.trim() || prev.city,
-        }));
+        try {
+          const parsed = JSON.parse(stored);
+          setSelectedAddress(parsed);
+          setInput(prev => ({
+            ...prev,
+            address: parsed.address,
+            city: parsed.formattedAddress?.split(",").slice(-3, -2)[0]?.trim() || prev.city,
+          }));
+        } catch {
+          localStorage.removeItem("selectedAddress");
+        }
       }
     }
   }, [user, open]);
@@ -112,7 +115,7 @@ const CheckoutConfirmPage = ({
 
         {/* Order Summary */}
         <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 mb-2 border border-gray-100 dark:border-gray-700">
-          <h3 className="font-semibold text-gray-900 dark:text-white mb-3 text-sm uppercase tracking-wide text-gray-500 dark:text-gray-400">Order Summary</h3>
+          <h3 className="font-semibold text-sm uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Order Summary</h3>
           <div className="space-y-2">
             {cart.map((item) => (
               <div key={item._id} className="flex justify-between text-sm">
@@ -169,11 +172,37 @@ const CheckoutConfirmPage = ({
           </div>
 
           {useAddressPicker ? (
-            <AddressPicker 
-              onAddressSelect={handleAddressSelect}
-              initialAddress={input.address}
-              initialPincode={user?.address?.match(/\d{6}/)?.[0] || ""}
-            />
+            <div className="space-y-4">
+              <AddressPicker 
+                onAddressSelect={handleAddressSelect}
+                initialAddress={input.address}
+                initialPincode={user?.address?.match(/\d{6}/)?.[0] || ""}
+              />
+              {/* When using AddressPicker, we still need a form for payment method + submit */}
+              <form onSubmit={checkoutHandler} className="space-y-4">
+                {/* Hidden inputs to preserve form state */}
+                <input type="hidden" name="name" value={input.name} />
+                <input type="hidden" name="email" value={input.email} />
+                <input type="hidden" name="address" value={input.address} />
+                <input type="hidden" name="city" value={input.city} />
+                <input type="hidden" name="country" value={input.country} />
+                
+                <PaymentMethodSelector paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} />
+                
+                <DialogFooter>
+                  {loading ? (
+                    <Button disabled className="w-full bg-orange-500 h-12 rounded-lg">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...
+                    </Button>
+                  ) : (
+                    <Button type="submit" className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 h-12 text-white font-semibold rounded-lg shadow-md shadow-orange-500/20">
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      {paymentMethod === "cod" ? "Place Order (COD)" : "Continue To Payment"}
+                    </Button>
+                  )}
+                </DialogFooter>
+              </form>
+            </div>
           ) : (
             <form onSubmit={checkoutHandler} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -197,38 +226,7 @@ const CheckoutConfirmPage = ({
                 <Input type="text" name="country" value={input.country} onChange={changeEventHandler} placeholder="Country" required className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
               </div>
 
-              {/* Payment Method */}
-              <div className="space-y-2 md:col-span-2">
-                <Label className="text-gray-700 dark:text-gray-300 font-medium">Payment Method</Label>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("stripe")}
-                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${
-                      paymentMethod === "stripe"
-                        ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
-                        : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                    }`}
-                  >
-                    <CreditCard className="w-6 h-6 mx-auto mb-2 text-orange-500" />
-                    <p className="font-semibold text-sm text-gray-900 dark:text-white">Pay Online</p>
-                    <p className="text-xs text-gray-400">Stripe / Card</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("cod")}
-                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${
-                      paymentMethod === "cod"
-                        ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
-                        : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                    }`}
-                  >
-                    <Banknote className="w-6 h-6 mx-auto mb-2 text-orange-500" />
-                    <p className="font-semibold text-sm text-gray-900 dark:text-white">Cash on Delivery</p>
-                    <p className="text-xs text-gray-400">Pay when you receive</p>
-                  </button>
-                </div>
-              </div>
+              <PaymentMethodSelector paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} />
 
               <DialogFooter className="col-span-1 md:col-span-2 pt-4">
                 {loading ? (
@@ -249,5 +247,46 @@ const CheckoutConfirmPage = ({
     </Dialog>
   );
 };
+
+// Extracted Payment Method Selector to avoid duplication
+const PaymentMethodSelector = ({
+  paymentMethod,
+  setPaymentMethod,
+}: {
+  paymentMethod: "stripe" | "cod";
+  setPaymentMethod: (m: "stripe" | "cod") => void;
+}) => (
+  <div className="space-y-2 md:col-span-2">
+    <Label className="text-gray-700 dark:text-gray-300 font-medium">Payment Method</Label>
+    <div className="flex gap-3">
+      <button
+        type="button"
+        onClick={() => setPaymentMethod("stripe")}
+        className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+          paymentMethod === "stripe"
+            ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
+            : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+        }`}
+      >
+        <CreditCard className="w-6 h-6 mx-auto mb-2 text-orange-500" />
+        <p className="font-semibold text-sm text-gray-900 dark:text-white">Pay Online</p>
+        <p className="text-xs text-gray-400">Stripe / Card</p>
+      </button>
+      <button
+        type="button"
+        onClick={() => setPaymentMethod("cod")}
+        className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+          paymentMethod === "cod"
+            ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
+            : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+        }`}
+      >
+        <Banknote className="w-6 h-6 mx-auto mb-2 text-orange-500" />
+        <p className="font-semibold text-sm text-gray-900 dark:text-white">Cash on Delivery</p>
+        <p className="text-xs text-gray-400">Pay when you receive</p>
+      </button>
+    </div>
+  </div>
+);
 
 export default CheckoutConfirmPage;

@@ -36,8 +36,7 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
 
   const [address, setAddress] = useState(initialAddress);
   const [pincode, setPincode] = useState(initialPincode);
-  // FIX: Prefix unused variable with underscore
-  const [_coordinates, setCoordinates] = useState<[number, number] | null>(null);
+const [, setCoordinates] = useState<[number, number] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -60,11 +59,12 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
       setCoordinates([lng, lat]);
       placeMarker([lat, lng]);
 
-      // Reverse geocode
+      // Reverse geocode — FIXED: added credentials: 'include'
       try {
         const res = await fetch("/api/v1/map/reverse-geocode", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ lng, lat }),
         });
         const data = await res.json();
@@ -133,9 +133,11 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
     setError("");
 
     try {
+      // FIXED: added credentials: 'include'
       const validateRes = await fetch("/api/v1/map/validate-address", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ address, pincode }),
       });
       const validateData = await validateRes.json();

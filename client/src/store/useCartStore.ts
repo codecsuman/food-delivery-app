@@ -15,7 +15,6 @@ export const useCartStore = create<CartState>()(
             (cartItem) => cartItem._id === item._id,
           );
           if (existingItem) {
-            // Already in cart — increment quantity
             return {
               cart: state.cart.map((cartItem) =>
                 cartItem._id === item._id
@@ -24,7 +23,6 @@ export const useCartStore = create<CartState>()(
               ),
             };
           } else {
-            // Add new item to cart
             return {
               cart: [...state.cart, { ...item, quantity: 1 }],
             };
@@ -59,11 +57,6 @@ export const useCartStore = create<CartState>()(
           ),
         }));
       },
-
-      // Get cart total price
-      getCartTotal: () => {
-        return 0; // Will be computed in selector
-      },
     }),
     {
       name: "cart-store",
@@ -72,14 +65,12 @@ export const useCartStore = create<CartState>()(
   ),
 );
 
-// Selector for cart total (outside store for performance)
 export const useCartTotal = () => {
   return useCartStore((state) =>
     state.cart.reduce((total, item) => total + item.price * item.quantity, 0),
   );
 };
 
-// Selector for cart count
 export const useCartCount = () => {
   return useCartStore((state) =>
     state.cart.reduce((count, item) => count + item.quantity, 0),

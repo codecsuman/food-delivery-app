@@ -25,6 +25,8 @@ type ReviewState = {
     menuItemId?: string;
     rating: number;
     comment: string;
+    userName?: string;
+    userImage?: string;
   }) => Promise<boolean>;
   getReviewsByRestaurant: (restaurantId: string) => Promise<void>;
   getUserReviews: () => Promise<void>;
@@ -41,6 +43,9 @@ export const useReviewStore = create<ReviewState>((set) => ({
       const response = await axios.post(`${API_END_POINT}/`, data);
       if (response.data.success) {
         toast.success(response.data.message);
+        set((state) => ({
+          reviews: [response.data.review, ...state.reviews],
+        }));
         return true;
       }
       return false;

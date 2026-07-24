@@ -27,8 +27,6 @@ const SearchPage = () => {
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Single source of truth: everything (text, query, cuisines, price, city)
-  // flows through searchRestaurant. No-params + no filters returns everything.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -67,72 +65,73 @@ const SearchPage = () => {
     setPriceRange([0, 2000]);
   };
 
+  const restaurants = searchedRestaurant?.data || [];
+  const totalCount = searchedRestaurant?.count ?? restaurants.length;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900 py-10 px-4">
       <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row justify-between gap-10">
-          {/* 🔧 FIXED: sticky now lives on this single wrapper, not on
-              FilterPage alone. Previously FilterPage was `sticky top-24`
-              while Location/Price range sat below it in normal flow —
-              on scroll the sticky card and its non-sticky siblings moved
-              independently and ended up visually overlapping. Now the
-              whole column sticks and scrolls together as one block. */}
-          <div className="w-full md:w-72 shrink-0 space-y-6 md:sticky md:top-24 md:self-start">
-            <FilterPage />
+        <div className="flex flex-col md:flex-row gap-8">
+          {/* Sidebar - Sticky */}
+          <div className="w-full md:w-72 shrink-0">
+            <div className="md:sticky md:top-24 space-y-6">
+              <FilterPage />
 
-            {/* Location filter */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-4">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                Location
-              </label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="e.g. Kolkata"
-                  className="pl-9 h-10 rounded-lg"
-                />
+              {/* Location filter */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-4">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                  Location
+                </label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="e.g. Kolkata"
+                    className="pl-9 h-10 rounded-lg"
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* Price range filter */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-4">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                Price range
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min={0}
-                  max={2000}
-                  step={50}
-                  value={priceRange[0]}
-                  onChange={(e) =>
-                    setPriceRange([Number(e.target.value), priceRange[1]])
-                  }
-                  className="flex-1"
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={2000}
-                  step={50}
-                  value={priceRange[1]}
-                  onChange={(e) =>
-                    setPriceRange([priceRange[0], Number(e.target.value)])
-                  }
-                  className="flex-1"
-                />
-              </div>
-              <div className="flex justify-between text-xs text-gray-400 mt-1">
-                <span>₹{priceRange[0]}</span>
-                <span>₹{priceRange[1]}</span>
+              {/* Price range filter */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-4">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                  Price range
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={2000}
+                    step={50}
+                    value={priceRange[0]}
+                    onChange={(e) =>
+                      setPriceRange([Number(e.target.value), priceRange[1]])
+                    }
+                    className="flex-1 accent-orange-500"
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={2000}
+                    step={50}
+                    value={priceRange[1]}
+                    onChange={(e) =>
+                      setPriceRange([priceRange[0], Number(e.target.value)])
+                    }
+                    className="flex-1 accent-orange-500"
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>₹{priceRange[0]}</span>
+                  <span>₹{priceRange[1]}</span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="flex-1">
+          {/* Main Content */}
+          <div className="flex-1 min-w-0">
             {/* Search Input */}
             <div className="flex items-center gap-2 mb-6">
               <div className="relative flex-1">
@@ -176,7 +175,7 @@ const SearchPage = () => {
             {/* Results Header */}
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-3 mb-6">
               <h1 className="font-semibold text-lg text-gray-900 dark:text-white">
-                {searchedRestaurant?.data?.length || 0} {params.text ? "Search Results" : "Restaurants"} Found
+                {totalCount} {params.text ? "Search Results" : "Restaurants"} Found
               </h1>
 
               {appliedFilter.length > 0 && (
@@ -208,14 +207,14 @@ const SearchPage = () => {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {loading ? (
                 <SearchPageSkeleton />
-              ) : !loading && searchedRestaurant?.data?.length === 0 ? (
+              ) : restaurants.length === 0 ? (
                 <NoResultFound
                   searchText={params.text || "all restaurants"}
                   searchQuery={searchQuery}
                   onClear={handleClearAllFilters}
                 />
               ) : (
-                searchedRestaurant?.data?.map((restaurant: Restaurant) => (
+                restaurants.map((restaurant: Restaurant) => (
                   <Card
                     key={restaurant._id}
                     className="group bg-white dark:bg-gray-800 shadow-sm rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-700 hover:shadow-xl hover:shadow-orange-500/10 transition-all duration-300 hover:-translate-y-1 p-0"
@@ -233,7 +232,7 @@ const SearchPage = () => {
                       <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                       <div className="absolute top-3 left-3 bg-white/95 dark:bg-gray-900/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
                         <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                          {restaurant.estimatedDeliveryTime || restaurant.deliveryTime || 30} min
+                          {restaurant.deliveryTime || 30} min
                         </span>
                       </div>
                       {(restaurant.rating || 0) > 0 && (
@@ -370,7 +369,7 @@ const NoResultFound = ({
         No results found
       </h1>
       <p className="text-gray-500 dark:text-gray-400 mb-2">
-        We couldn't find any results for "{searchText}"
+        We couldn&apos;t find any results for &quot;{searchText}&quot;
         {searchQuery && ` with "${searchQuery}"`}.
       </p>
       <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">

@@ -8,7 +8,7 @@ const Orders = () => {
     useRestaurantStore();
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
-  // Step-by-step status flow
+  // Step-by-step status flow matching backend exactly
   const STATUS_FLOW: Record<
     string,
     { next: string; label: string; color: string; icon: string }
@@ -140,12 +140,15 @@ const Orders = () => {
 
         {/* Orders List */}
         <div className="space-y-5">
-          {restaurantOrder.map((order) => {
+          {restaurantOrder.map((order: any) => {
             const flow = STATUS_FLOW[order.status] || STATUS_FLOW.pending;
             const isFinal =
               order.status === "delivered" ||
               order.status === "cancelled" ||
               order.status === "payment_failed";
+
+            // Backend returns cartItems, not items
+            const items = order.cartItems || [];
 
             return (
               <div
@@ -157,7 +160,7 @@ const Orders = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-3 mb-4">
                       <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
-                        {order.deliveryDetails.name}
+                        {order.deliveryDetails?.name || "Customer"}
                       </h2>
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${statusBadgeStyles(
@@ -171,47 +174,52 @@ const Orders = () => {
                     <div className="space-y-1.5 text-sm text-gray-600 dark:text-gray-400">
                       <p className="flex items-center gap-2">
                         <Mail className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                        {order.deliveryDetails.email}
+                        {order.deliveryDetails?.email || "N/A"}
                       </p>
                       <p className="flex items-center gap-2">
                         <MapPin className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                        {order.deliveryDetails.address},{" "}
-                        {order.deliveryDetails.city}
+                        {order.deliveryDetails?.address || "N/A"}
+                        {order.deliveryDetails?.city ? `, ${order.deliveryDetails.city}` : ""}
                       </p>
                       <p className="flex items-center gap-2">
                         <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                        {formatDate(order.createdAt)}
+                        {order.createdAt ? formatDate(order.createdAt) : "N/A"}
                       </p>
                     </div>
 
                     <p className="text-lg font-bold mt-3 bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent inline-block">
-                      {formatPrice(order.totalAmount)}
+                      {formatPrice(order.totalAmount || 0)}
                     </p>
 
-                    {/* Order Items */}
-                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2.5">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        Items
-                      </h3>
-                      {order.cartItems.map((item: any, idx: number) => (
-                        <div
-                          key={idx}
-                          className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400"
-                        >
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-10 h-10 object-cover rounded-lg ring-1 ring-black/5"
-                          />
-                          <span>
-                            {item.name}{" "}
-                            <span className="text-gray-400 dark:text-gray-500">
-                              × {item.quantity}
+                    {/* Order Items - using cartItems from backend */}
+                    {items.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2.5">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                          Items
+                        </h3>
+                        {items.map((item: any, idx: number) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400"
+                          >
+                            <img
+                              src={item.image || "https://via.placeholder.com/40?text=Food"}
+                              alt={item.name || "Item"}
+                              className="w-10 h-10 object-cover rounded-lg ring-1 ring-black/5"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = "https://via.placeholder.com/40?text=Food";
+                              }}
+                            />
+                            <span>
+                              {item.name || "Unknown Item"}{" "}
+                              <span className="text-gray-400 dark:text-gray-500">
+                                × {item.quantity || 1}
+                              </span>
                             </span>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Status Update - Step by Step */}

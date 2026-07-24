@@ -44,40 +44,7 @@ const FilterPage = () => {
   const hasActiveFilters = appliedFilter.length > 0;
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 h-fit sticky top-24">
-      {/* Scoped, cross-browser scrollbar for the option lists below.
-          Kept local (not global CSS) so it only affects this component.
-          overflow-y: scroll (not auto) + a visible track means the
-          scrollbar is always on screen, not just on hover — so it's
-          obvious each box scrolls on its own without touching the page. */}
-      <style>{`
-        .filter-scroll {
-          scrollbar-width: thin;
-          scrollbar-color: rgb(249 115 22) rgb(243 244 246); /* orange-500 on gray-100 */
-          scrollbar-gutter: stable;
-        }
-        .filter-scroll::-webkit-scrollbar {
-          width: 8px;
-        }
-        .filter-scroll::-webkit-scrollbar-track {
-          background: rgb(243 244 246); /* gray-100 */
-          border-radius: 9999px;
-        }
-        .filter-scroll::-webkit-scrollbar-thumb {
-          background-color: rgb(249 115 22); /* orange-500 */
-          border-radius: 9999px;
-        }
-        .filter-scroll::-webkit-scrollbar-thumb:hover {
-          background-color: rgb(234 88 12); /* orange-600 */
-        }
-        .dark .filter-scroll::-webkit-scrollbar-track {
-          background: rgb(55 65 81); /* gray-700 */
-        }
-        .dark .filter-scroll {
-          scrollbar-color: rgb(249 115 22) rgb(55 65 81);
-        }
-      `}</style>
-
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 h-fit">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2.5">
           <div className="h-9 w-9 rounded-xl bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center">
@@ -107,7 +74,7 @@ const FilterPage = () => {
 
       <div className="space-y-6">
         {sections.map((section, index) => (
-          <div key={section.title} className="group">
+          <div key={section.title}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">
                 {section.title}
@@ -119,7 +86,7 @@ const FilterPage = () => {
                 None yet
               </p>
             ) : (
-              <div className="filter-scroll h-44 overflow-y-scroll pr-2 space-y-1.5 rounded-lg bg-gray-50/60 dark:bg-gray-900/20 p-1.5">
+              <div className="max-h-44 overflow-y-auto pr-2 space-y-1 rounded-lg bg-gray-50/60 dark:bg-gray-900/20 p-1.5 scrollbar-thin scrollbar-thumb-orange-500 scrollbar-track-gray-100 dark:scrollbar-track-gray-700">
                 {section.options.map((option) => {
                   const isChecked = appliedFilter.includes(option.label);
                   return (
@@ -128,9 +95,8 @@ const FilterPage = () => {
                       className={`flex items-center space-x-3 p-2.5 rounded-xl cursor-pointer transition-colors ${
                         isChecked
                           ? "bg-orange-50 dark:bg-orange-500/10"
-                          : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                          : "hover:bg-white dark:hover:bg-gray-700"
                       }`}
-                      onClick={() => appliedFilterHandler(option.label)}
                     >
                       <Checkbox
                         id={option.id}

@@ -1,5 +1,6 @@
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { useReviewStore } from "@/store/useReviewStore";
+import { useUserStore } from "@/store/useUserStore";
 import AvailableMenu from "./AvailableMenu";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -13,6 +14,7 @@ const RestaurantDetail = () => {
   const params = useParams();
   const { singleRestaurant, getSingleRestaurant, loading } = useRestaurantStore();
   const { reviews, getReviewsByRestaurant, addReview, loading: reviewLoading } = useReviewStore();
+  const { user } = useUserStore();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [hoverRating, setHoverRating] = useState(0);
@@ -24,13 +26,28 @@ const RestaurantDetail = () => {
     }
   }, [params.id, getSingleRestaurant, getReviewsByRestaurant]);
 
+  const handleSubmitReview = async () => {
+    if (!rating || !comment.trim() || !params.id) return;
+    const success = await addReview({
+      restaurantId: params.id,
+      rating,
+      comment: comment.trim(),
+      userName: user?.fullname || "Anonymous",
+      userImage: user?.profilePicture || "",
+    });
+    if (success) {
+      setRating(0);
+      setComment("");
+      getReviewsByRestaurant(params.id);
+    }
+  };
+
   if (loading || !singleRestaurant) {
     return <RestaurantDetailSkeleton />;
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900">
-      {/* Hero Image */}
       <div className="relative w-full h-56 md:h-80 lg:h-96">
         <img src={singleRestaurant.imageUrl} alt={singleRestaurant.restaurantName} className="object-cover w-full h-full" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
@@ -49,9 +66,7 @@ const RestaurantDetail = () => {
         </div>
       </div>
 
-      {/* Content */}
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Info Bar */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 mb-8 -mt-10 relative z-10">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
             <div className="flex flex-wrap gap-2">
@@ -84,26 +99,24 @@ const RestaurantDetail = () => {
           </div>
         </div>
 
-       {/* Menu Section */}
-<div>
-  <h2 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white mb-6">Menu</h2>
-  {singleRestaurant.menus && singleRestaurant.menus.length > 0 ? (
-    <AvailableMenu
-      menus={singleRestaurant.menus}
-      restaurant={singleRestaurant}
-    />
-  ) : (
-    <div className="flex flex-col items-center justify-center text-center py-24 px-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/30">
-      <div className="h-14 w-14 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center mb-4">
-        <UtensilsCrossed className="h-7 w-7 text-orange-500" />
-      </div>
-      <p className="text-gray-600 dark:text-gray-300 font-medium">No menu items available yet</p>
-      <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Check back soon for new dishes</p>
-    </div>
-  )}
-</div>
+        <div>
+          <h2 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white mb-6">Menu</h2>
+          {singleRestaurant.menus && singleRestaurant.menus.length > 0 ? (
+            <AvailableMenu
+              menus={singleRestaurant.menus}
+              restaurant={singleRestaurant}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-center py-24 px-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/30">
+              <div className="h-14 w-14 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center mb-4">
+                <UtensilsCrossed className="h-7 w-7 text-orange-500" />
+              </div>
+              <p className="text-gray-600 dark:text-gray-300 font-medium">No menu items available yet</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Check back soon for new dishes</p>
+            </div>
+          )}
+        </div>
 
-        {/* Reviews Section */}
         <div className="mt-12">
           <div className="flex items-center gap-3 mb-6">
             <div className="h-10 w-10 rounded-xl bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center">
@@ -115,7 +128,6 @@ const RestaurantDetail = () => {
             </div>
           </div>
 
-          {/* Add Review Form */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 mb-6">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Write a Review</h3>
             <div className="flex items-center gap-1 mb-4">
@@ -141,40 +153,35 @@ const RestaurantDetail = () => {
               rows={3}
             />
             <Button
-              onClick={async () => {
-                if (!rating || !comment.trim()) return;
-                await addReview({ restaurantId: params.id!, rating, comment: comment.trim() });
-                setRating(0);
-                setComment("");
-                getReviewsByRestaurant(params.id!);
-              }}
+              onClick={handleSubmitReview}
               disabled={!rating || !comment.trim() || reviewLoading}
               className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg shadow-md shadow-orange-500/20"
             >
               <Send className="w-4 h-4 mr-2" />
-              Submit Review
+              {reviewLoading ? "Submitting..." : "Submit Review"}
             </Button>
           </div>
 
-          {/* Reviews List */}
           {reviews.length === 0 ? (
             <div className="text-center py-12 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700">
               No reviews yet. Be the first to review!
             </div>
           ) : (
             <div className="space-y-4">
-              {reviews.map((review) => (
+              {reviews.map((review: any) => (
                 <div key={review._id} className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center">
-                      {review.userImage ? (
-                        <img src={review.userImage} alt="" className="w-10 h-10 rounded-full object-cover" />
+                    <div className="h-10 w-10 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center overflow-hidden">
+                      {review.user?.profilePicture ? (
+                        <img src={review.user.profilePicture} alt="" className="w-10 h-10 rounded-full object-cover" />
                       ) : (
                         <User className="w-5 h-5 text-orange-500" />
                       )}
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-900 dark:text-white text-sm">{review.userName}</p>
+                      <p className="font-semibold text-gray-900 dark:text-white text-sm">
+                        {review.user?.fullname || review.userName || "Anonymous"}
+                      </p>
                       <div className="flex items-center gap-1">
                         {[...Array(5)].map((_, i) => (
                           <Star key={i} className={`w-3.5 h-3.5 ${i < review.rating ? "text-amber-400 fill-amber-400" : "text-gray-300"}`} />
@@ -196,7 +203,6 @@ const RestaurantDetail = () => {
 
 export default RestaurantDetail;
 
-// ======================= SKELETON LOADER =======================
 const RestaurantDetailSkeleton = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900">

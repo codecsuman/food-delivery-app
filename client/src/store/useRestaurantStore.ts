@@ -28,7 +28,6 @@ export const useRestaurantStore = create<RestaurantState>()(
       restaurantOrder: [],
       filterOptions: { cuisines: [], dishes: [] },
 
-      // ✅ NEW: manually set the currently selected restaurant
       setRestaurant: (restaurant) => {
         set({ restaurant });
       },
@@ -71,7 +70,12 @@ export const useRestaurantStore = create<RestaurantState>()(
       updateRestaurant: async (formData: FormData) => {
         try {
           set({ loading: true });
-          const response = await axios.put(`${API_END_POINT}/`, formData, {
+          // If we have a restaurant with ID, use /:id endpoint, otherwise use /
+          const restaurantId = get().restaurant?._id;
+          const url = restaurantId
+            ? `${API_END_POINT}/${restaurantId}`
+            : `${API_END_POINT}/`;
+          const response = await axios.put(url, formData, {
             headers: { "Content-Type": "multipart/form-data" },
           });
           if (response.data.success) {
@@ -94,8 +98,8 @@ export const useRestaurantStore = create<RestaurantState>()(
       ) => {
         try {
           set({ loading: true });
+
           const params = new URLSearchParams();
-          if (searchText) params.set("searchText", searchText);
           if (searchQuery) params.set("searchQuery", searchQuery);
           if (selectedCuisines.length)
             params.set("selectedCuisines", selectedCuisines.join(","));
@@ -105,9 +109,19 @@ export const useRestaurantStore = create<RestaurantState>()(
             params.set("maxPrice", String(priceRange[1]));
           }
 
-          const response = await axios.get(
-            `${API_END_POINT}/search?${params.toString()}`,
-          );
+          let response;
+          if (searchText && searchText !== "all") {
+            // Use /search/:searchText endpoint
+            response = await axios.get(
+              `${API_END_POINT}/search/${encodeURIComponent(searchText)}?${params.toString()}`,
+            );
+          } else {
+            // Use /search endpoint (query-only)
+            response = await axios.get(
+              `${API_END_POINT}/search?${params.toString()}`,
+            );
+          }
+
           if (response.data.success) {
             set({
               searchedRestaurant: {
@@ -118,9 +132,10 @@ export const useRestaurantStore = create<RestaurantState>()(
           }
         } catch (error: any) {
           if (error?.response?.status === 404) {
-            set({ searchedRestaurant: { data: [] } });
+            set({ searchedRestaurant: { data: [], count: 0 } });
           } else {
             toast.error(getErrorMessage(error));
+            set({ searchedRestaurant: { data: [], count: 0 } });
           }
         } finally {
           set({ loading: false });
@@ -138,7 +153,7 @@ export const useRestaurantStore = create<RestaurantState>()(
               },
             });
           }
-        } catch (error: any) {
+        } catch (_error) {
           // silent fail
         }
       },
@@ -245,7 +260,7 @@ export const useRestaurantStore = create<RestaurantState>()(
             `${API_END_POINT}/order?t=${Date.now()}`,
           );
           if (response.data.success) {
-            set({ restaurantOrder: response.data.orders });
+            set({ restaurantOrder: response.data.orders || [] });
           }
         } catch (error: any) {
           if (error?.response?.status === 404) {
@@ -307,6 +322,7 @@ export const useRestaurantStore = create<RestaurantState>()(
             set({
               searchedRestaurant: {
                 data: response.data.restaurants || [],
+                count: response.data.count,
               },
             });
           }
@@ -342,7 +358,6 @@ export const useRestaurantStore = create<RestaurantState>()(
     {
       name: "restaurant-store",
       storage: createJSONStorage(() => localStorage),
-      // ✅ now also persists the selected restaurant + singleRestaurant across refresh
       partialize: (state) => ({
         appliedFilter: state.appliedFilter,
         restaurant: state.restaurant,

@@ -62,7 +62,7 @@ export const useUserStore = create<UserState>()(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
-      isCheckingAuth: true,
+      isCheckingAuth: false,
       loading: false,
 
       setUser: (user) => set({ user }),
@@ -117,7 +117,7 @@ export const useUserStore = create<UserState>()(
           );
           if (response.data.success) {
             toast.success(response.data.message);
-            set({ user: response.data.user, isAuthenticated: true });
+            await get().checkAuthentication();
             return true;
           }
           return false;
@@ -130,7 +130,7 @@ export const useUserStore = create<UserState>()(
       },
 
       checkAuthentication: async () => {
-        if (get().isCheckingAuth && get().user) return;
+        if (get().isCheckingAuth) return;
         try {
           set({ isCheckingAuth: true });
           const response = await axios.get(`${API_END_POINT}/check-auth`, {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOrderStore } from "@/store/useOrderStore";
 import { Button } from "./ui/button";
@@ -18,29 +18,35 @@ import {
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   pending: { color: "bg-yellow-500", icon: <Clock className="w-3 h-3" />, label: "Pending" },
+  confirmed: { color: "bg-green-500", icon: <PackageCheck className="w-3 h-3" />, label: "Confirmed" },
   preparing: { color: "bg-orange-500", icon: <UtensilsCrossed className="w-3 h-3" />, label: "Preparing" },
-  picked_up: { color: "bg-blue-500", icon: <PackageCheck className="w-3 h-3" />, label: "Picked Up" },
-  delivering: { color: "bg-indigo-500", icon: <Truck className="w-3 h-3" />, label: "On the Way" },
-  delivered: { color: "bg-green-500", icon: <PackageCheck className="w-3 h-3" />, label: "Delivered" },
+  outfordelivery: { color: "bg-blue-500", icon: <Truck className="w-3 h-3" />, label: "On the Way" },
+  delivered: { color: "bg-green-600", icon: <PackageCheck className="w-3 h-3" />, label: "Delivered" },
   cancelled: { color: "bg-red-500", icon: <Clock className="w-3 h-3" />, label: "Cancelled" },
+  payment_failed: { color: "bg-red-400", icon: <Clock className="w-3 h-3" />, label: "Payment Failed" },
 };
 
+const statusFlow = ["pending", "confirmed", "preparing", "outfordelivery", "delivered"];
+
 const MyOrders = () => {
-  // FIX: Use any to bypass type issues
-  const { orders, loading }: any = useOrderStore();
+  const { orders, getOrderDetails, loading } = useOrderStore();
   const [activeTab, setActiveTab] = useState<"active" | "past">("active");
 
+  useEffect(() => {
+    getOrderDetails();
+  }, [getOrderDetails]);
+
   const activeOrders = (orders || []).filter((o: any) =>
-    ["pending", "preparing", "picked_up", "delivering"].includes(o.status)
+    ["pending", "confirmed", "preparing", "outfordelivery"].includes(o.status)
   );
 
   const pastOrders = (orders || []).filter((o: any) =>
-    ["delivered", "cancelled"].includes(o.status)
+    ["delivered", "cancelled", "payment_failed"].includes(o.status)
   );
 
   const displayOrders = activeTab === "active" ? activeOrders : pastOrders;
 
-  if (loading) {
+  if (loading && orders.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
@@ -103,7 +109,15 @@ const MyOrders = () => {
         <div className="space-y-4">
           {displayOrders.map((order: any) => {
             const status = statusConfig[order.status] || statusConfig.pending;
-            const canTrack = ["preparing", "picked_up", "delivering"].includes(order.status);
+            const canTrack = ["confirmed", "preparing", "outfordelivery"].includes(order.status);
+            const restaurantName = typeof order.restaurant === "string"
+              ? "Restaurant"
+              : order.restaurant?.restaurantName || "Restaurant";
+            const restaurantId = typeof order.restaurant === "string"
+              ? order.restaurant
+              : order.restaurant?._id;
+            const items = order.cartItems || [];
+            const deliveryAddress = order.deliveryDetails?.address || "Delivery address";
 
             return (
               <div
@@ -129,13 +143,11 @@ const MyOrders = () => {
                         </span>
                       </div>
                       <h3 className="font-bold text-gray-900 dark:text-white text-lg">
-                        {typeof order.restaurant === "string" 
-                          ? "Restaurant" 
-                          : order.restaurant?.name || "Restaurant"}
+                        {restaurantName}
                       </h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1">
                         <MapPin className="w-3.5 h-3.5" />
-                        {order.deliveryAddress || "Delivery address"}
+                        {deliveryAddress}
                       </p>
                     </div>
                     <div className="text-right">
@@ -143,14 +155,13 @@ const MyOrders = () => {
                         ₹{order.totalAmount || 0}
                       </p>
                       <p className="text-xs text-gray-400">
-                        {(order.items || []).length} items
+                        {items.length} items
                       </p>
                     </div>
                   </div>
 
-                  {/* Items */}
                   <div className="space-y-2 mb-4">
-                    {(order.items || []).slice(0, 3).map((item: any, idx: number) => (
+                    {items.slice(0, 3).map((item: any, idx: number) => (
                       <div key={idx} className="flex items-center justify-between text-sm">
                         <span className="text-gray-600 dark:text-gray-300">
                           {item.quantity}x {item.name}
@@ -160,16 +171,15 @@ const MyOrders = () => {
                         </span>
                       </div>
                     ))}
-                    {(order.items || []).length > 3 && (
+                    {items.length > 3 && (
                       <p className="text-xs text-gray-400">
-                        +{(order.items || []).length - 3} more items
+                        +{items.length - 3} more items
                       </p>
                     )}
                   </div>
 
                   <Separator className="my-4" />
 
-                  {/* Actions */}
                   <div className="flex items-center gap-3">
                     {canTrack && (
                       <Link to={`/track-order/${order._id}`} className="flex-1">
@@ -179,10 +189,7 @@ const MyOrders = () => {
                         </Button>
                       </Link>
                     )}
-                    <Link 
-                      to={`/restaurant/${typeof order.restaurant === "string" ? order.restaurant : order.restaurant?._id}`} 
-                      className="flex-1"
-                    >
+                    <Link to={`/restaurant/${restaurantId}`} className="flex-1">
                       <Button
                         variant="outline"
                         className="w-full rounded-xl border-gray-200 dark:border-gray-700 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-600 dark:hover:text-orange-400 transition-all"
@@ -194,36 +201,33 @@ const MyOrders = () => {
                   </div>
                 </div>
 
-                {/* Progress Bar */}
                 {activeTab === "active" && (
                   <div className="px-5 pb-5">
                     <div className="flex items-center gap-1">
-                      {["pending", "preparing", "picked_up", "delivering", "delivered"].map(
-                        (step, idx) => {
-                          const stepIndex = ["pending", "preparing", "picked_up", "delivering", "delivered"].indexOf(order.status);
-                          const isCompleted = idx <= stepIndex;
-                          const isCurrent = idx === stepIndex;
+                      {statusFlow.map((step, idx) => {
+                        const stepIndex = statusFlow.indexOf(order.status);
+                        const isCompleted = idx <= stepIndex;
+                        const isCurrent = idx === stepIndex;
 
-                          return (
-                            <div key={step} className="flex-1 flex items-center">
-                              <div
-                                className={`h-2 flex-1 rounded-full transition-all ${
-                                  isCompleted
-                                    ? isCurrent
-                                      ? "bg-gradient-to-r from-orange-500 to-amber-500 animate-pulse"
-                                      : "bg-green-500"
-                                    : "bg-gray-200 dark:bg-gray-700"
-                                }`}
-                              />
-                            </div>
-                          );
-                        }
-                      )}
+                        return (
+                          <div key={step} className="flex-1 flex items-center">
+                            <div
+                              className={`h-2 flex-1 rounded-full transition-all ${
+                                isCompleted
+                                  ? isCurrent
+                                    ? "bg-gradient-to-r from-orange-500 to-amber-500 animate-pulse"
+                                    : "bg-green-500"
+                                  : "bg-gray-200 dark:bg-gray-700"
+                              }`}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                     <div className="flex justify-between mt-2 text-[10px] text-gray-400 uppercase tracking-wider">
                       <span>Placed</span>
+                      <span>Confirmed</span>
                       <span>Preparing</span>
-                      <span>Picked</span>
                       <span>On Way</span>
                       <span>Delivered</span>
                     </div>
