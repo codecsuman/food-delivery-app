@@ -55,6 +55,7 @@ app.use(
   }),
 );
 
+// Stripe webhook MUST be before express.json() — needs raw body
 app.post(
   "/api/v1/order/webhook",
   bodyParser.raw({ type: "application/json" }),
@@ -81,6 +82,13 @@ app.use("/api/v1/map", mapRoute);
 // =========================
 app.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({ status: "OK", message: "Server is running" });
+});
+
+// =========================
+// 404 HANDLER
+// =========================
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({ success: false, message: "Route not found" });
 });
 
 // =========================

@@ -8,11 +8,6 @@ import {
   getPublicIdFromUrl,
 } from "../utils/cloudinary.js";
 import { generateToken, clearToken } from "../utils/generateToken.js";
-import {
-  sendPasswordResetEmail,
-  sendResetSuccessEmail,
-  sendWelcomeEmail,
-} from "../mailtrap/email.js";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -52,7 +47,6 @@ export const signup = async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ✅ FIX: Don't set admin: true for everyone — default to false
     user = await User.create({
       fullname,
       email,
@@ -63,12 +57,6 @@ export const signup = async (req: Request, res: Response) => {
     });
 
     generateToken(res, user);
-
-    try {
-      await sendWelcomeEmail(email, fullname);
-    } catch (emailError) {
-      console.error("Failed to send welcome email:", emailError);
-    }
 
     const userWithoutPassword = await User.findById(user._id).select(
       "-password",
@@ -81,7 +69,6 @@ export const signup = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Signup error:", error);
-    // ✅ Handle duplicate key error (race condition on email)
     if (error.code === 11000 && error.keyPattern?.email) {
       return res.status(409).json({
         success: false,
@@ -173,8 +160,6 @@ export const verifyEmail = async (req: Request, res: Response) => {
     user.verificationTokenExpiresAt = undefined;
     await user.save();
 
-    await sendWelcomeEmail(user.email, user.fullname);
-
     return res.status(200).json({
       success: true,
       message: "Email verified successfully",
@@ -233,10 +218,10 @@ export const forgotPassword = async (req: Request, res: Response) => {
     user.resetPasswordTokenExpiresAt = resetTokenExpiresAt;
     await user.save();
 
-    await sendPasswordResetEmail(
-      user.email,
-      `${process.env.FRONTEND_URL}/reset-password/${resetToken}`,
-    );
+    const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    console.log(`\n🔐 Password Reset URL for ${email}:`);
+    console.log(resetURL);
+    console.log(`\n`);
 
     return res.status(200).json({
       success: true,
@@ -281,8 +266,6 @@ export const resetPassword = async (req: Request, res: Response) => {
     user.resetPasswordToken = undefined;
     user.resetPasswordTokenExpiresAt = undefined;
     await user.save();
-
-    await sendResetSuccessEmail(user.email);
 
     return res.status(200).json({
       success: true,
@@ -362,7 +345,6 @@ export const updateProfile = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ Email format validation
     if (email !== undefined) {
       const trimmedEmail = email.toLowerCase().trim();
       if (!emailRegex.test(trimmedEmail)) {
@@ -431,7 +413,6 @@ export const updateProfile = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Update profile error:", error);
-    // ✅ Handle duplicate key error (race condition on email)
     if (error.code === 11000 && error.keyPattern?.email) {
       return res.status(409).json({
         success: false,

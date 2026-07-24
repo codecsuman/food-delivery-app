@@ -5,7 +5,6 @@ import {
   getOrders,
   getOrderBySessionId,
   getOrderById,
-  stripeWebhook,
 } from "../controller/order.controller.js";
 
 const router = express.Router();
@@ -25,12 +24,5 @@ router.post(
 
 // Get order by Stripe session ID (protected)
 router.get("/session/:sessionId", isAuthenticated, getOrderBySessionId);
-
-// Stripe webhook (raw body - must NOT use express.json())
-router.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  stripeWebhook,
-);
 
 export default router;

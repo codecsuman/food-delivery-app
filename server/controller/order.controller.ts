@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { Restaurant } from "../models/restaurant.model.js";
 import { Order } from "../models/order.model.js";
+import { Menu } from "../models/menu.model.js";
 import Stripe from "stripe";
 import mongoose from "mongoose";
 
@@ -64,7 +65,7 @@ export const getOrders = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= GET ORDER BY ID (FIXED) =======================
+// ======================= GET ORDER BY ID =======================
 export const getOrderById = async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
@@ -88,7 +89,6 @@ export const getOrderById = async (req: Request, res: Response) => {
         .json({ success: false, message: "Order not found" });
     }
 
-    // FIX: Handle both populated (object) and unpopulated (ObjectId) user field
     const orderUserId =
       (order.user as any)._id?.toString() || (order.user as any).toString();
 
@@ -147,7 +147,7 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
     );
     const paymentMethod = (req.body.paymentMethod as string) || "stripe";
 
-    // ========== CASH ON DELIVERY (DEMO SKIP) ==========
+    // ========== CASH ON DELIVERY (COD) ==========
     if (paymentMethod === "cod") {
       const order = await Order.create({
         restaurant: restaurant._id,
@@ -159,10 +159,17 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
         paymentMethod: "cod",
       });
 
-      // Increment orderCount for each menu item
-      const Menu = mongoose.model("Menu");
       for (const item of checkoutSessionRequest.cartItems) {
-        await Menu.findByIdAndUpdate(item.menuId, { $inc: { orderCount: 1 } });
+        try {
+          await Menu.findByIdAndUpdate(item.menuId, {
+            $inc: { orderCount: 1 },
+          });
+        } catch (menuErr) {
+          console.warn(
+            `Failed to update orderCount for menu ${item.menuId}:`,
+            menuErr,
+          );
+        }
       }
 
       return res.status(200).json({
@@ -264,7 +271,6 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         return res.status(200).send();
       }
 
-      // ✅ IDEMPOTENCY FIX: Only process if still pending
       if (order.status !== "pending") {
         console.log(
           `Webhook: order ${order._id} already processed (status: ${order.status})`,
@@ -279,10 +285,17 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       order.paymentIntentId = session.payment_intent as string;
       await order.save();
 
-      // Increment orderCount for each menu item
-      const Menu = mongoose.model("Menu");
       for (const item of order.cartItems) {
-        await Menu.findByIdAndUpdate(item.menuId, { $inc: { orderCount: 1 } });
+        try {
+          await Menu.findByIdAndUpdate(item.menuId, {
+            $inc: { orderCount: 1 },
+          });
+        } catch (menuErr) {
+          console.warn(
+            `Failed to update orderCount for menu ${item.menuId}:`,
+            menuErr,
+          );
+        }
       }
 
       console.log(`Order ${order._id} confirmed via webhook`);
@@ -297,7 +310,6 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
       const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
       if (order) {
-        // ✅ Only mark as failed if not already confirmed
         if (order.status === "pending") {
           order.status = "payment_failed";
           await order.save();
@@ -343,7 +355,7 @@ export const createLineItems = (
   return lineItems;
 };
 
-// ======================= GET ORDER BY SESSION ID (FIXED) =======================
+// ======================= GET ORDER BY SESSION ID =======================
 export const getOrderBySessionId = async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
@@ -368,7 +380,6 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
         .json({ success: false, message: "Order not found" });
     }
 
-    // FIX: Same authorization logic as getOrderById
     const orderUserId =
       (order.user as any)._id?.toString() || (order.user as any).toString();
     const isOrderOwner = orderUserId === req.id;

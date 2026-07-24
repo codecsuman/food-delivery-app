@@ -4,7 +4,6 @@ import { uploadImage, deleteImage } from "../utils/cloudinary.js";
 import { Order } from "../models/order.model.js";
 import mongoose from "mongoose";
 
-// Valid order status transitions (state machine)
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["confirmed", "cancelled", "payment_failed"],
   confirmed: ["preparing", "cancelled"],
@@ -389,7 +388,6 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ STATE MACHINE: Validate status transition
     const currentStatus = order.status;
     const newStatus = status.toLowerCase();
     const allowedNextStatuses = STATUS_TRANSITIONS[currentStatus] || [];
@@ -422,7 +420,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= SEARCH RESTAURANTS (real-time, with filters) =======================
+// ======================= SEARCH RESTAURANTS =======================
 export const searchRestaurant = async (req: Request, res: Response) => {
   try {
     const searchText = req.params.searchText || "";
@@ -437,7 +435,7 @@ export const searchRestaurant = async (req: Request, res: Response) => {
       req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : undefined;
 
     const Menu = mongoose.model("Menu");
-    const andConditions: any[] = [];
+    const andConditions: mongoose.FilterQuery<typeof Restaurant>[] = [];
 
     const getMenuMatchingIds = async (
       term: string,
@@ -454,10 +452,9 @@ export const searchRestaurant = async (req: Request, res: Response) => {
         );
     };
 
-    // Text term (name / city / country / cuisine / menu item name)
     const term = searchText || searchQuery;
     if (term) {
-      const orConditions: any[] = [
+      const orConditions: mongoose.FilterQuery<typeof Restaurant>[] = [
         { restaurantName: { $regex: term, $options: "i" } },
         { city: { $regex: term, $options: "i" } },
         { country: { $regex: term, $options: "i" } },
@@ -468,13 +465,10 @@ export const searchRestaurant = async (req: Request, res: Response) => {
       andConditions.push({ $or: orConditions });
     }
 
-    // Explicit location filter (separate from the free-text term)
     if (city) {
       andConditions.push({ city: { $regex: city, $options: "i" } });
     }
 
-    // Cuisine / dish chips — case-insensitive match against restaurant.cuisines
-    // OR against menu item names (so "Biryani"/"Burger" work as dish filters too)
     if (selectedCuisines.length > 0) {
       const cuisineRegexes = selectedCuisines.map(
         (c) => new RegExp(`^${c.trim()}$`, "i"),
@@ -498,7 +492,6 @@ export const searchRestaurant = async (req: Request, res: Response) => {
       });
     }
 
-    // Price range — match restaurants that have at least one menu item in range
     if (minPrice !== undefined || maxPrice !== undefined) {
       const priceFilter: any = {};
       if (minPrice !== undefined && !Number.isNaN(minPrice))
@@ -536,7 +529,7 @@ export const searchRestaurant = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= GET FILTER OPTIONS (distinct cuisines + dishes) =======================
+// ======================= GET FILTER OPTIONS =======================
 export const getFilterOptions = async (_req: Request, res: Response) => {
   try {
     const Menu = mongoose.model("Menu");
@@ -559,7 +552,7 @@ export const getFilterOptions = async (_req: Request, res: Response) => {
   }
 };
 
-// ======================= GET SINGLE RESTAURANT (public) =======================
+// ======================= GET SINGLE RESTAURANT =======================
 export const getSingleRestaurant = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

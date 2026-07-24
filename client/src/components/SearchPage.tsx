@@ -71,7 +71,13 @@ const SearchPage = () => {
     <div className="min-h-screen bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900 py-10 px-4">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between gap-10">
-          <div className="w-full md:w-72 shrink-0 space-y-6">
+          {/* 🔧 FIXED: sticky now lives on this single wrapper, not on
+              FilterPage alone. Previously FilterPage was `sticky top-24`
+              while Location/Price range sat below it in normal flow —
+              on scroll the sticky card and its non-sticky siblings moved
+              independently and ended up visually overlapping. Now the
+              whole column sticks and scrolls together as one block. */}
+          <div className="w-full md:w-72 shrink-0 space-y-6 md:sticky md:top-24 md:self-start">
             <FilterPage />
 
             {/* Location filter */}
