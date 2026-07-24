@@ -20,14 +20,14 @@ export const useOrderStore = create<OrderState>((set) => ({
   orders: [],
 
   createCheckoutSession: async (
-    checkoutSession: CheckoutSessionRequest,
+    checkoutSessionRequest: CheckoutSessionRequest,
     paymentMethod: "stripe" | "cod" = "stripe",
   ) => {
     try {
       set({ loading: true });
       const response = await axios.post(
         `${API_END_POINT}/checkout/create-checkout-session`,
-        { ...checkoutSession, paymentMethod },
+        { ...checkoutSessionRequest, paymentMethod },
         { headers: { "Content-Type": "application/json" } },
       );
 
@@ -129,7 +129,28 @@ export const useOrderStore = create<OrderState>((set) => ({
     return null;
   },
 
-  cancelOrder: async (_orderId: string) => {
-    toast.error("Order cancellation is not available. Please contact support.");
+  cancelOrder: async (orderId: string) => {
+    try {
+      set({ loading: true });
+      const response = await axios.post(`${API_END_POINT}/${orderId}/cancel`);
+
+      if (response.data.success) {
+        toast.success(response.data.message || "Order cancelled successfully");
+        set((state) => ({
+          orders: state.orders.map((o) =>
+            o._id === orderId ? { ...o, status: "cancelled" } : o,
+          ),
+        }));
+        return true;
+      } else {
+        toast.error(response.data.message || "Failed to cancel order");
+        return false;
+      }
+    } catch (error: any) {
+      toast.error(getErrorMessage(error));
+      return false;
+    } finally {
+      set({ loading: false });
+    }
   },
 }));

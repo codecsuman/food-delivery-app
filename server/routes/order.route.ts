@@ -5,6 +5,7 @@ import {
   getOrders,
   getOrderBySessionId,
   getOrderById,
+  cancelOrder,
 } from "../controller/order.controller.js";
 
 const router = express.Router();
@@ -24,5 +25,8 @@ router.post(
 
 // Get order by Stripe session ID (protected)
 router.get("/session/:sessionId", isAuthenticated, getOrderBySessionId);
+
+// Cancel order (protected)
+router.post("/:orderId/cancel", isAuthenticated, cancelOrder);
 
 export default router;

@@ -240,6 +240,87 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
   }
 };
 
+// ======================= CANCEL ORDER =======================
+export const cancelOrder = async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid order ID" });
+    }
+
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+    }
+
+    const orderUserId =
+      (order.user as any)._id?.toString() || (order.user as any).toString();
+
+    if (orderUserId !== req.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to cancel this order",
+      });
+    }
+
+    // Only allow cancellation for orders that haven't been delivered yet
+    const nonCancellableStatuses = ["delivered", "cancelled", "payment_failed"];
+    if (nonCancellableStatuses.includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel an order that is already ${order.status}`,
+      });
+    }
+
+    // If Stripe payment and paymentIntentId exists, process refund
+    if (order.paymentMethod === "stripe" && order.paymentIntentId) {
+      try {
+        // paymentIntentId in your schema stores the session.id, but after webhook
+        // it gets updated to the actual payment_intent string.
+        // We need to handle both cases.
+        let paymentIntentId = order.paymentIntentId;
+
+        // If it looks like a session ID (starts with cs_), retrieve the session to get payment_intent
+        if (paymentIntentId.startsWith("cs_")) {
+          const session =
+            await stripe.checkout.sessions.retrieve(paymentIntentId);
+          paymentIntentId = session.payment_intent as string;
+        }
+
+        if (paymentIntentId && paymentIntentId.startsWith("pi_")) {
+          await stripe.refunds.create({
+            payment_intent: paymentIntentId,
+            reason: "requested_by_customer",
+          });
+        }
+      } catch (refundError: any) {
+        console.error("Stripe refund error:", refundError.message);
+        // Continue to cancel the order even if refund fails (log it)
+      }
+    }
+
+    order.status = "cancelled";
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Order cancelled successfully",
+      order,
+    });
+  } catch (error) {
+    console.error("Cancel order error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
 // ======================= STRIPE WEBHOOK =======================
 export const stripeWebhook = async (req: Request, res: Response) => {
   let event: Stripe.Event;

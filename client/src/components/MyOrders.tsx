@@ -14,37 +14,85 @@ import {
   PackageCheck,
   UtensilsCrossed,
   Navigation,
+  XCircle,
 } from "lucide-react";
 
-const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-  pending: { color: "bg-yellow-500", icon: <Clock className="w-3 h-3" />, label: "Pending" },
-  confirmed: { color: "bg-green-500", icon: <PackageCheck className="w-3 h-3" />, label: "Confirmed" },
-  preparing: { color: "bg-orange-500", icon: <UtensilsCrossed className="w-3 h-3" />, label: "Preparing" },
-  outfordelivery: { color: "bg-blue-500", icon: <Truck className="w-3 h-3" />, label: "On the Way" },
-  delivered: { color: "bg-green-600", icon: <PackageCheck className="w-3 h-3" />, label: "Delivered" },
-  cancelled: { color: "bg-red-500", icon: <Clock className="w-3 h-3" />, label: "Cancelled" },
-  payment_failed: { color: "bg-red-400", icon: <Clock className="w-3 h-3" />, label: "Payment Failed" },
+const statusConfig: Record<
+  string,
+  { color: string; icon: React.ReactNode; label: string }
+> = {
+  pending: {
+    color: "bg-yellow-500",
+    icon: <Clock className="w-3 h-3" />,
+    label: "Pending",
+  },
+  confirmed: {
+    color: "bg-green-500",
+    icon: <PackageCheck className="w-3 h-3" />,
+    label: "Confirmed",
+  },
+  preparing: {
+    color: "bg-orange-500",
+    icon: <UtensilsCrossed className="w-3 h-3" />,
+    label: "Preparing",
+  },
+  outfordelivery: {
+    color: "bg-blue-500",
+    icon: <Truck className="w-3 h-3" />,
+    label: "On the Way",
+  },
+  delivered: {
+    color: "bg-green-600",
+    icon: <PackageCheck className="w-3 h-3" />,
+    label: "Delivered",
+  },
+  cancelled: {
+    color: "bg-red-500",
+    icon: <XCircle className="w-3 h-3" />,
+    label: "Cancelled",
+  },
+  payment_failed: {
+    color: "bg-red-400",
+    icon: <Clock className="w-3 h-3" />,
+    label: "Payment Failed",
+  },
 };
 
-const statusFlow = ["pending", "confirmed", "preparing", "outfordelivery", "delivered"];
+const statusFlow = [
+  "pending",
+  "confirmed",
+  "preparing",
+  "outfordelivery",
+  "delivered",
+];
 
 const MyOrders = () => {
-  const { orders, getOrderDetails, loading } = useOrderStore();
+  const { orders, getOrderDetails, loading, cancelOrder } = useOrderStore();
   const [activeTab, setActiveTab] = useState<"active" | "past">("active");
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
     getOrderDetails();
   }, [getOrderDetails]);
 
-  const activeOrders = (orders || []).filter((o: any) =>
-    ["pending", "confirmed", "preparing", "outfordelivery"].includes(o.status)
+  const activeOrders = (orders || []).filter((o) =>
+    ["pending", "confirmed", "preparing", "outfordelivery"].includes(o.status),
   );
 
-  const pastOrders = (orders || []).filter((o: any) =>
-    ["delivered", "cancelled", "payment_failed"].includes(o.status)
+  const pastOrders = (orders || []).filter((o) =>
+    ["delivered", "cancelled", "payment_failed"].includes(o.status),
   );
 
   const displayOrders = activeTab === "active" ? activeOrders : pastOrders;
+
+  const handleCancel = async (orderId: string) => {
+    setCancellingId(orderId);
+    const success = await cancelOrder(orderId);
+    setCancellingId(null);
+    if (success) {
+      getOrderDetails();
+    }
+  };
 
   if (loading && orders.length === 0) {
     return (
@@ -107,17 +155,23 @@ const MyOrders = () => {
         </div>
       ) : (
         <div className="space-y-4">
-          {displayOrders.map((order: any) => {
+          {displayOrders.map((order) => {
             const status = statusConfig[order.status] || statusConfig.pending;
-            const canTrack = ["confirmed", "preparing", "outfordelivery"].includes(order.status);
-            const restaurantName = typeof order.restaurant === "string"
-              ? "Restaurant"
-              : order.restaurant?.restaurantName || "Restaurant";
-            const restaurantId = typeof order.restaurant === "string"
-              ? order.restaurant
-              : order.restaurant?._id;
+            const canTrack = ["confirmed", "preparing", "outfordelivery"].includes(
+              order.status,
+            );
+            const canCancel = ["pending", "confirmed"].includes(order.status);
+            const restaurantName =
+              typeof order.restaurant === "string"
+                ? "Restaurant"
+                : (order.restaurant as any)?.restaurantName || "Restaurant";
+            const restaurantId =
+              typeof order.restaurant === "string"
+                ? order.restaurant
+                : (order.restaurant as any)?._id;
             const items = order.cartItems || [];
-            const deliveryAddress = order.deliveryDetails?.address || "Delivery address";
+            const deliveryAddress =
+              order.deliveryDetails?.address || "Delivery address";
 
             return (
               <div
@@ -128,18 +182,25 @@ const MyOrders = () => {
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <Badge className={`${status.color} text-white border-0 flex items-center gap-1`}>
+                        <Badge
+                          className={`${status.color} text-white border-0 flex items-center gap-1`}
+                        >
                           {status.icon}
                           {status.label}
                         </Badge>
                         <span className="text-xs text-gray-400">
-                          {order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }) : "N/A"}
+                          {order.createdAt
+                            ? new Date(order.createdAt).toLocaleDateString(
+                                "en-IN",
+                                {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                },
+                              )
+                            : "N/A"}
                         </span>
                       </div>
                       <h3 className="font-bold text-gray-900 dark:text-white text-lg">
@@ -161,8 +222,11 @@ const MyOrders = () => {
                   </div>
 
                   <div className="space-y-2 mb-4">
-                    {items.slice(0, 3).map((item: any, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between text-sm">
+                    {items.slice(0, 3).map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between text-sm"
+                      >
                         <span className="text-gray-600 dark:text-gray-300">
                           {item.quantity}x {item.name}
                         </span>
@@ -180,16 +244,37 @@ const MyOrders = () => {
 
                   <Separator className="my-4" />
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
                     {canTrack && (
-                      <Link to={`/track-order/${order._id}`} className="flex-1">
+                      <Link
+                        to={`/track-order/${order._id}`}
+                        className="flex-1 min-w-[120px]"
+                      >
                         <Button className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 transition-all">
                           <Navigation className="w-4 h-4 mr-2" />
                           Track Order
                         </Button>
                       </Link>
                     )}
-                    <Link to={`/restaurant/${restaurantId}`} className="flex-1">
+                    {activeTab === "active" && canCancel && (
+                      <Button
+                        variant="outline"
+                        className="flex-1 min-w-[120px] rounded-xl border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-300 transition-all"
+                        onClick={() => handleCancel(order._id)}
+                        disabled={cancellingId === order._id}
+                      >
+                        {cancellingId === order._id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <XCircle className="w-4 h-4 mr-2" />
+                        )}
+                        Cancel Order
+                      </Button>
+                    )}
+                    <Link
+                      to={`/restaurant/${restaurantId}`}
+                      className="flex-1 min-w-[120px]"
+                    >
                       <Button
                         variant="outline"
                         className="w-full rounded-xl border-gray-200 dark:border-gray-700 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-600 dark:hover:text-orange-400 transition-all"

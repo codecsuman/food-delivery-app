@@ -1,6 +1,6 @@
 import express from "express";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
-import { createCheckoutSession, getOrders, getOrderBySessionId, getOrderById, stripeWebhook, } from "../controller/order.controller.js";
+import { createCheckoutSession, getOrders, getOrderBySessionId, getOrderById, cancelOrder, } from "../controller/order.controller.js";
 const router = express.Router();
 // Get user's orders (protected)
 router.get("/", isAuthenticated, getOrders);
@@ -10,6 +10,6 @@ router.get("/:orderId", isAuthenticated, getOrderById);
 router.post("/checkout/create-checkout-session", isAuthenticated, createCheckoutSession);
 // Get order by Stripe session ID (protected)
 router.get("/session/:sessionId", isAuthenticated, getOrderBySessionId);
-// Stripe webhook (raw body - must NOT use express.json())
-router.post("/webhook", express.raw({ type: "application/json" }), stripeWebhook);
+// Cancel order (protected)
+router.post("/:orderId/cancel", isAuthenticated, cancelOrder);
 export default router;

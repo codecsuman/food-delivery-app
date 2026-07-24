@@ -54,5 +54,5 @@ export type OrderState = {
     orderId: string,
     interval?: number,
   ) => Promise<Orders | null>;
-  cancelOrder: (orderId: string) => Promise<void>;
+  cancelOrder: (orderId: string) => Promise<boolean>; // <-- FIXED: was Promise<void>
 };
