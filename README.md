@@ -43,11 +43,13 @@
 
 - [About](#-about)
 - [Features](#-features)
+- [What's New](#-whats-new)
 - [Tech Stack](#-tech-stack)
 - [Project Structure](#-project-structure)
 - [Getting Started](#-getting-started)
 - [Environment Variables](#-environment-variables)
 - [How to Use](#-how-to-use)
+- [Order Lifecycle](#-order-lifecycle)
 - [API Reference](#-api-reference)
 - [Roadmap](#-roadmap)
 - [Troubleshooting](#-troubleshooting)
@@ -59,7 +61,7 @@
 
 ## 📝 About
 
-**Suman Food** is a production-ready, full-stack food ordering and restaurant management system. Any user can spin up their own restaurant storefront, manage a menu, and start taking orders — while customers browse, search, and check out with real Stripe payments.
+**Suman Food** is a production-ready, full-stack food ordering and restaurant management system. Any user can spin up their own restaurant storefront, manage a menu, and start taking orders — while customers browse, search, checkout with **Stripe or Cash on Delivery**, and track their order in real time from placement to delivery.
 
 <div align="center">
 
@@ -81,9 +83,11 @@
 - 🔐 Secure signup, login & email verification
 - 🔎 Real-time restaurant search with debounced input
 - 🎛️ Live filters — cuisine, dish/food name, price range & location, pulled straight from the database
-- 🌟 Featured Dishes & Restaurants carousel on the home page *(Coming Soon)*
-- 🛒 Add to cart & Stripe checkout
-- 📦 Track order status in real time
+- 🛒 Add to cart & checkout with **Stripe or Cash on Delivery**
+- ❌ Cancel an order yourself — automatic Stripe refund if it was paid online
+- 📦 Live order tracking with an animated progress bar (Placed → Confirmed → Preparing → On the Way → Delivered)
+- 🗂️ Active vs Past orders, separated into tabs
+- 🔁 Reorder from a past order in one click
 - 🌗 Light / Dark mode toggle
 - 📱 Fully responsive design
 
@@ -93,10 +97,9 @@
 ### 🧑‍🍳 For Restaurant Owners
 - 🏪 Create & manage your own restaurant
 - 📋 Add / edit / delete menu items with images
-- 🌟 Mark menu items or your restaurant as "Featured" *(Coming Soon)*
 - 🖼️ Cloudinary-powered image uploads
-- 📬 Manage incoming orders live
-- 💳 Secure Stripe payment processing
+- 📬 Manage incoming orders live, including COD orders
+- 💳 Secure Stripe payment processing with webhook-verified confirmation
 - 📊 Full admin dashboard
 
 </td>
@@ -105,12 +108,34 @@
 
 <br/>
 
+## 🆕 What's New
+
+The latest update adds a complete order-management layer on top of the original checkout flow.
+
+| Feature | Before | Now |
+|---|---|---|
+| **Payment methods** | Stripe only | Stripe **+ Cash on Delivery (COD)** |
+| **Cancel order** | ❌ Not possible | ✅ Full flow with automatic Stripe refund |
+| **Order tracking** | Basic list | Animated progress bar + Active/Past tabs |
+| **Stripe webhook** | ❌ Missing | ✅ Confirms success, flags failed payments |
+| **Session recovery** | ❌ Missing | ✅ Order lookup by Stripe `session_id` after redirect |
+
+**Details:**
+
+- **Cash on Delivery (COD)** — `paymentMethod: "cod"` is accepted at checkout. COD orders are created with `status: "confirmed"` immediately, no Stripe session required.
+- **Order Cancellation** — `POST /api/v1/order/:orderId/cancel` validates that the requester owns the order, blocks cancellation once an order is `delivered`, `cancelled`, or `payment_failed`, and automatically issues a Stripe refund for orders that were paid online. The frontend exposes this as a red "Cancel Order" button (with a loading spinner) on orders still in the Active tab.
+- **Order Status Tracking** — `MyOrders.tsx` renders a color-coded, animated progress bar across five stages (`Placed → Confirmed → Preparing → On the Way → Delivered`), with orders split into **Active** and **Past** tabs.
+- **Order Details by Session ID** — `getOrderBySessionId` retrieves the correct order right after a Stripe redirect, using the `session_id` query param.
+- **Stripe Webhook** — a dedicated webhook controller listens for `checkout.session.completed` (confirms the order and stores the `paymentIntentId`) and `payment_intent.payment_failed` (marks the order as `payment_failed`).
+
+<br/>
+
 ## 🛠 Tech Stack
 
 <div align="center">
 
 ### Backend
-`Node.js` · `Express` · `TypeScript` · `MongoDB + Mongoose` · `JWT` · `Cloudinary` · `Stripe` · `Mailtrap` · `tsx`
+`Node.js` · `Express` · `TypeScript` · `MongoDB + Mongoose` · `JWT` · `Cloudinary` · `Stripe (Checkout + Webhooks + Refunds)` · `Mailtrap` · `tsx`
 
 ### Frontend
 `React` · `Vite` · `TypeScript` · `Tailwind CSS` · `shadcn/ui` · `Zustand` · `React Router` · `Axios` · `Sonner`
@@ -124,12 +149,13 @@
 <details>
 <summary><b>Click to expand full folder structure</b> 📂</summary>
 
-
+```
 food-app/
 ├── server/                   # Backend
 │   ├── index.ts              # Main server file
-│   ├── controller/           # Route handlers
-│   ├── routes/                # API routes
+│   ├── controller/           # Route handlers (order.controller.ts now includes
+│   │                         #   COD checkout, cancelOrder, stripeWebhook, getOrderBySessionId)
+│   ├── routes/                # API routes (order.route.ts now includes /:orderId/cancel)
 │   ├── models/                # Database schemas
 │   ├── middlewares/           # Auth, upload, etc.
 │   ├── utils/                 # Helpers (Cloudinary, JWT)
@@ -137,16 +163,18 @@ food-app/
 │   └── mailtrap/              # Email service
 │
 └── client/                   # Frontend
-├── src/
-│   ├── components/        # UI components
-│   ├── admin/              # Admin dashboard
-│   ├── auth/                # Auth pages
-│   ├── store/               # Zustand stores
-│   ├── types/                # TypeScript types
-│   ├── schema/               # Zod validation schemas
-│   └── layout/                # Layout components
-├── vite.config.ts
-└── tailwind.config.js
+    ├── src/
+    │   ├── components/        # UI components
+    │   ├── admin/              # Admin dashboard
+    │   ├── auth/                # Auth pages
+    │   ├── store/               # Zustand stores (useOrderStore.ts now supports
+    │   │                       #   paymentMethod + cancelOrder -> Promise<boolean>)
+    │   ├── types/                # TypeScript types
+    │   ├── schema/               # Zod validation schemas
+    │   └── layout/                # Layout components
+    ├── vite.config.ts
+    └── tailwind.config.js
+```
 
 </details>
 
@@ -155,7 +183,7 @@ food-app/
 ## 🚀 Getting Started
 
 ### Prerequisites
-> `Node.js 18+` · `MongoDB` (local or Atlas) · `Git`
+> `Node.js 18+` · `MongoDB` (local or Atlas) · `Git` · A `Stripe` account (test mode is fine)
 
 ### 1️⃣ Clone the repository
 ```bash
@@ -189,36 +217,61 @@ npm run dev
 
 ## 🔧 Environment Variables
 
-Create a `.env` file inside `server/`:
+Create a `.env` file inside `server/`. **Never commit this file — use the placeholder values below as a template and keep real secrets out of Git.**
 
 ```env
+# =========================
 # SERVER
+# =========================
 PORT=8001
 NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
 
+# =========================
 # DATABASE
+# =========================
 MONGO_URI=mongodb://localhost:27017/suman_food
 
+# =========================
 # JWT
-SECRET_KEY=your-super-secret-jwt-key
+# =========================
+SECRET_KEY=your-super-secret-jwt-key-min-32-chars
 
+# =========================
 # STRIPE
+# =========================
 STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
 WEBHOOK_ENDPOINT_SECRET=whsec_your_webhook_secret
 
+# =========================
 # CLOUDINARY
+# =========================
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
 
+# =========================
 # MAILTRAP
+# =========================
 MAILTRAP_API_TOKEN=your_mailtrap_token
 MAILTRAP_TEST_INBOX_ID=your_inbox_id
 
+# =========================
+# OPENCAGE (FREE GEOCODING - 2500 req/day)
+# =========================
+OPENCAGE_API_KEY=your_opencage_api_key
+
+# =========================
+# DELIVERY SETTINGS
+# =========================
+DELIVERY_SPEED_KM_PER_MIN=0.333
+MAX_DELIVERY_RADIUS_KM=10
+MIN_ORDER_AMOUNT=99
 ```
 
 > 💡 **Tip:** The app runs even without Cloudinary/Mailtrap configured — it falls back to placeholder images and console-logged emails.
+>
+> 🔒 **Security note:** If a `.env` file with real credentials is ever exposed (chat, screenshot, commit), rotate every key immediately — MongoDB password, Stripe secret key, JWT secret, Cloudinary secret, and webhook secret — and make sure `.env` is listed in `.gitignore`.
 
 <br/>
 
@@ -232,7 +285,7 @@ MAILTRAP_TEST_INBOX_ID=your_inbox_id
 1. Sign up — every user is admin-enabled
 2. Go to **Dashboard → Restaurant**, create your storefront
 3. **Dashboard → Menu** — add food items with images
-4. **Dashboard → Orders** — manage incoming orders
+4. **Dashboard → Orders** — manage incoming orders, including COD orders
 
 </td>
 <td width="50%" valign="top">
@@ -240,12 +293,27 @@ MAILTRAP_TEST_INBOX_ID=your_inbox_id
 **🛍️ Customers**
 1. Sign up for an account
 2. Browse or search restaurants by name/city/cuisine — filters update live as new cuisines/dishes are added
-3. Add items to cart & check out via Stripe
-4. Track your order status live
+3. Add items to cart & check out via **Stripe or Cash on Delivery**
+4. Track your order's live progress, or cancel it from the **Active Orders** tab if you change your mind
 
 </td>
 </tr>
 </table>
+
+<br/>
+
+## 📦 Order Lifecycle
+
+```
+Placed → Confirmed → Preparing → On the Way → Delivered
+                │
+                └── Cancelled (customer-initiated, before Delivered)
+                └── Payment Failed (Stripe orders only, via webhook)
+```
+
+- **Stripe orders** move to `Confirmed` once the `checkout.session.completed` webhook fires; a failed payment attempt is caught by `payment_intent.payment_failed` and marks the order `payment_failed`.
+- **COD orders** skip the Stripe round-trip entirely and are created directly with `status: "confirmed"`.
+- **Cancellation** is only allowed while an order is still `pending` or `confirmed`. Cancelling a paid Stripe order automatically triggers a refund; cancelling a COD order simply updates its status.
 
 <br/>
 
@@ -301,10 +369,11 @@ MAILTRAP_TEST_INBOX_ID=your_inbox_id
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
-| POST | `/api/v1/order/checkout` | Create checkout session |
-| POST | `/api/v1/order/webhook` | Stripe webhook |
+| POST | `/api/v1/order/checkout` | Create an order — `paymentMethod: "stripe"` starts a Checkout session, `paymentMethod: "cod"` confirms the order immediately |
+| POST | `/api/v1/order/webhook` | Stripe webhook — handles `checkout.session.completed` and `payment_intent.payment_failed` |
 | GET | `/api/v1/order/` | Get my orders |
-| GET | `/api/v1/order/:sessionId` | Get order by session |
+| GET | `/api/v1/order/:sessionId` | Get order by Stripe session ID (used on redirect back from Stripe) |
+| POST | `/api/v1/order/:orderId/cancel` | Cancel an order — ownership + status checks, automatic Stripe refund for paid orders |
 
 </details>
 
@@ -317,9 +386,20 @@ Planned features, not yet built:
 - [ ] **Featured Restaurants & Menu Items** — restaurant owners get a toggle to mark items/restaurants as "Featured," surfaced in a home page carousel
 - [ ] Separate navbar views for restaurant owners (Dashboard/My Restaurants/Orders) vs. regular customers (Home/Explore/Orders)
 - [ ] "Order Now" button on menu items — skip the cart and go straight to checkout for a single item
-- [ ] Cash on Delivery (COD) as a payment option alongside Stripe
 - [ ] Customer reviews — star ratings & comments on restaurants
 - [ ] Success animation on profile update confirmation
+- [ ] Delivery partner assignment & live location tracking
+
+<details>
+<summary><b>✅ Recently shipped</b></summary>
+
+- [x] Cash on Delivery (COD) as a payment option alongside Stripe
+- [x] Order cancellation with automatic Stripe refunds
+- [x] Order status tracking with an animated progress bar
+- [x] Stripe webhook handling for payment success/failure
+- [x] Order recovery by Stripe session ID
+
+</details>
 
 <br/>
 
@@ -363,6 +443,26 @@ Check your Cloudinary credentials in `.env` — otherwise the app falls back to 
 Check Mailtrap credentials in `.env` — otherwise emails are logged to console for testing.
 </details>
 
+<details>
+<summary><b>Stripe webhook not firing locally</b></summary>
+
+Use the Stripe CLI to forward events to your local server:
+
+```bash
+stripe listen --forward-to localhost:8001/api/v1/order/webhook
+```
+
+Copy the `whsec_...` value it prints into `WEBHOOK_ENDPOINT_SECRET` in your `.env`.
+</details>
+
+<details>
+<summary><b>Cancel Order button not showing / cancellation fails</b></summary>
+
+- The button only appears for orders in `pending` or `confirmed` status, in the **Active Orders** tab.
+- Only the order's owner can cancel it — confirm you're logged in as the account that placed the order.
+- If the order was paid via Stripe, cancellation triggers a refund call — check your Stripe dashboard's Logs tab if it fails.
+</details>
+
 <br/>
 
 ## 🔒 Security
@@ -372,6 +472,9 @@ Check Mailtrap credentials in `.env` — otherwise emails are logged to console 
 - ✅ Image uploads validated for type & size
 - ✅ CORS locked to frontend origin only
 - ✅ Users can only manage their own restaurant & orders
+- ✅ Order cancellation enforces ownership and status checks before touching Stripe
+- ✅ Stripe webhook signature verified with `WEBHOOK_ENDPOINT_SECRET` before trusting any event
+- ✅ `.env` excluded via `.gitignore` — real secrets are never committed; use `.env.example` with dummy values instead
 
 <br/>
 
@@ -399,7 +502,7 @@ Distributed under the **ISC License**.
 
 ### Built with ❤️ using
 
-[React](https://react.dev/) · [Express](https://expressjs.com/) · [MongoDB](https://www.mongodb.com/) · [Tailwind CSS](https://tailwindcss.com/) · [shadcn/ui](https://ui.shadcn.com/)
+[React](https://react.dev/) · [Express](https://expressjs.com/) · [MongoDB](https://www.mongodb.com/) · [Tailwind CSS](https://tailwindcss.com/) · [shadcn/ui](https://ui.shadcn.com/) · [Stripe](https://stripe.com/)
 
 <br/>
 
@@ -407,4 +510,4 @@ Distributed under the **ISC License**.
 
 [![GitHub Stars](https://img.shields.io/github/stars/codecsuman/food-delivery-app?style=for-the-badge&logo=github&color=yellow)](https://github.com/codecsuman/food-delivery-app/stargazers)
 
-
+</div>
