@@ -167,39 +167,7 @@ This update is a full production-readiness pass — real-time tracking, accurate
 <details>
 <summary><b>Click to expand full folder structure</b> 📂</summary>
 
-food-app/
-├── server/ # Backend
-│ ├── index.ts # Main server file — CORS (multi-origin), Socket.IO setup, Stripe webhook mount
-│ ├── controller/
-│ │ ├── order.controller.ts # Checkout (Stripe + COD), min-amount validation, webhook, cancelOrder, getOrderBySessionId
-│ │ ├── restaurant.controller.ts # Create/update restaurant — now requires & stores lat/lng as GeoJSON
-│ │ └── user.controller.ts # Signup, login, logout, password reset (no email verification)
-│ ├── routes/
-│ │ └── map.route.ts # Geocoding + tracking-route endpoints, protected by auth
-│ ├── models/
-│ │ ├── order.model.ts # Includes deliveryDetails.lat/lng + live-tracking fields
-│ │ └── restaurant.model.ts # GeoJSON location: { type: "Point", coordinates: [lng, lat] }
-│ ├── middlewares/ # Auth, upload, etc.
-│ ├── socketHandlers/
-│ │ └── trackingSocket.ts # Authenticated Socket.IO namespace for live driver tracking
-│ ├── utils/ # Helpers (Cloudinary, JWT/cookie generation)
-│ └── db/ # Database connection
-│
-└── client/ # Frontend
-├── src/
-│ ├── components/
-│ │ ├── LiveTracking.tsx # Real-time map: restaurant/customer/driver markers, route, ETA
-│ │ ├── AddressPicker.tsx # Customer delivery-address map picker
-│ │ └── DeliveryTimeEstimator.tsx / RestaurantDistanceChecker.tsx
-│ ├── admin/
-│ │ └── Restaurant.tsx # Restaurant form — drag-a-pin map instead of raw lat/lng inputs
-│ ├── auth/ # Auth pages
-│ ├── store/ # Zustand stores (useOrderStore, useUserStore, useRestaurantStore)
-│ ├── types/ # TypeScript types
-│ ├── schema/ # Zod validation schemas (restaurantSchema includes lat/lng)
-│ └── layout/ # Layout components
-├── vite.config.ts
-└── tailwind.config.js
+
 
 
 </details>
