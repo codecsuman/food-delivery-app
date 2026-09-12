@@ -14,7 +14,7 @@ const STATUS_TRANSITIONS = {
 // ======================= CREATE RESTAURANT =======================
 export const createRestaurant = async (req, res) => {
     try {
-        const { restaurantName, city, country, deliveryTime, deliveryPrice, cuisines, } = req.body;
+        const { restaurantName, city, country, deliveryTime, deliveryPrice, cuisines, lat, lng, } = req.body;
         const file = req.file;
         if (!restaurantName || !city || !country || !deliveryTime || !cuisines) {
             return res.status(400).json({
@@ -49,6 +49,17 @@ export const createRestaurant = async (req, res) => {
                 message: "Cuisines must be a valid array",
             });
         }
+        const parsedLat = lat !== undefined ? Number(lat) : undefined;
+        const parsedLng = lng !== undefined ? Number(lng) : undefined;
+        if (parsedLat === undefined ||
+            parsedLng === undefined ||
+            Number.isNaN(parsedLat) ||
+            Number.isNaN(parsedLng)) {
+            return res.status(400).json({
+                success: false,
+                message: "Restaurant location (lat/lng) is required",
+            });
+        }
         const base64Image = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
         const cloudResponse = await uploadImage(base64Image, "suman-food/restaurants");
         const restaurant = await Restaurant.create({
@@ -61,6 +72,10 @@ export const createRestaurant = async (req, res) => {
             cuisines: parsedCuisines.map((c) => c.trim()),
             imageUrl: cloudResponse.secure_url,
             imagePublicId: cloudResponse.public_id,
+            location: {
+                type: "Point",
+                coordinates: [parsedLng, parsedLat],
+            },
         });
         return res.status(201).json({
             success: true,
@@ -137,7 +152,7 @@ export const getAllRestaurants = async (_req, res) => {
 export const updateRestaurant = async (req, res) => {
     try {
         const { id } = req.params;
-        const { restaurantName, city, country, deliveryTime, deliveryPrice, cuisines, } = req.body;
+        const { restaurantName, city, country, deliveryTime, deliveryPrice, cuisines, lat, lng, } = req.body;
         const file = req.file;
         const restaurant = id
             ? await Restaurant.findOne({ _id: id, user: req.id })
@@ -158,6 +173,20 @@ export const updateRestaurant = async (req, res) => {
             restaurant.deliveryTime = Number(deliveryTime);
         if (deliveryPrice !== undefined)
             restaurant.deliveryPrice = Number(deliveryPrice);
+        if (lat !== undefined && lng !== undefined) {
+            const parsedLat = Number(lat);
+            const parsedLng = Number(lng);
+            if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid lat/lng values",
+                });
+            }
+            restaurant.location = {
+                type: "Point",
+                coordinates: [parsedLng, parsedLat],
+            };
+        }
         if (cuisines) {
             try {
                 const parsedCuisines = Array.isArray(cuisines)

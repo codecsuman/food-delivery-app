@@ -8,7 +8,6 @@ import {
   resetPassword,
   signup,
   updateProfile,
-  verifyEmail,
 } from "../controller/user.controller.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
 
@@ -18,9 +17,6 @@ const router = express.Router();
 router.post("/signup", signup);
 router.post("/login", login);
 router.post("/logout", logout);
-
-// Email verification
-router.post("/verify-email", verifyEmail);
 
 // Password reset
 router.post("/forgot-password", forgotPassword);

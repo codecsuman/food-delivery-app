@@ -1,13 +1,11 @@
 import express from "express";
-import { checkAuth, forgotPassword, getProfile, login, logout, resetPassword, signup, updateProfile, verifyEmail, } from "../controller/user.controller.js";
+import { checkAuth, forgotPassword, getProfile, login, logout, resetPassword, signup, updateProfile, } from "../controller/user.controller.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
 const router = express.Router();
 // Auth routes
 router.post("/signup", signup);
 router.post("/login", login);
 router.post("/logout", logout);
-// Email verification
-router.post("/verify-email", verifyEmail);
 // Password reset
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);

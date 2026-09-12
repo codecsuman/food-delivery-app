@@ -24,6 +24,8 @@ interface LiveTrackingProps {
 }
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:8001";
+// FIX: full backend URL instead of relative path — required for Vercel deploys
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
 
 const STATUS_CONFIG: Record<string, {
   label: string;
@@ -97,7 +99,7 @@ const LiveTracking = ({
   const routeLine = useRef<L.Polyline | null>(null);
   const socket = useRef<Socket | null>(null);
 
- const [, setDriverLocation] = useState<[number, number]>(initialDriverCoords);
+  const [, setDriverLocation] = useState<[number, number]>(initialDriverCoords);
   const [eta, setEta] = useState<number | null>(null);
   const [distanceRemaining, setDistanceRemaining] = useState<number | null>(null);
   const [status, setStatus] = useState("preparing");
@@ -184,6 +186,12 @@ const LiveTracking = ({
       setIsConnected(false);
     });
 
+    // FIX: surface auth/authorization errors emitted from the backend
+    // (e.g. "Not authorized for this order") instead of failing silently.
+    socket.current.on("error", (err: any) => {
+      console.error("Socket error:", err?.message || err);
+    });
+
     return () => {
       socket.current?.disconnect();
       if (map.current) {
@@ -195,7 +203,8 @@ const LiveTracking = ({
 
   const drawRoute = async (from: [number, number], to: [number, number]) => {
     try {
-      const res = await fetch("/api/v1/map/tracking/route", {
+      // FIX: relative path → full backend URL
+      const res = await fetch(`${API_BASE_URL}/map/tracking/route`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

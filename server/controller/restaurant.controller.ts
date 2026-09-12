@@ -24,6 +24,8 @@ export const createRestaurant = async (req: Request, res: Response) => {
       deliveryTime,
       deliveryPrice,
       cuisines,
+      lat,
+      lng,
     } = req.body;
     const file = req.file;
 
@@ -62,6 +64,21 @@ export const createRestaurant = async (req: Request, res: Response) => {
       });
     }
 
+    const parsedLat = lat !== undefined ? Number(lat) : undefined;
+    const parsedLng = lng !== undefined ? Number(lng) : undefined;
+
+    if (
+      parsedLat === undefined ||
+      parsedLng === undefined ||
+      Number.isNaN(parsedLat) ||
+      Number.isNaN(parsedLng)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Restaurant location (lat/lng) is required",
+      });
+    }
+
     const base64Image = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
     const cloudResponse = await uploadImage(
       base64Image,
@@ -78,6 +95,10 @@ export const createRestaurant = async (req: Request, res: Response) => {
       cuisines: parsedCuisines.map((c: string) => c.trim()),
       imageUrl: cloudResponse.secure_url,
       imagePublicId: cloudResponse.public_id,
+      location: {
+        type: "Point",
+        coordinates: [parsedLng, parsedLat],
+      },
     });
 
     return res.status(201).json({
@@ -168,6 +189,8 @@ export const updateRestaurant = async (req: Request, res: Response) => {
       deliveryTime,
       deliveryPrice,
       cuisines,
+      lat,
+      lng,
     } = req.body;
     const file = req.file;
 
@@ -190,6 +213,23 @@ export const updateRestaurant = async (req: Request, res: Response) => {
       restaurant.deliveryTime = Number(deliveryTime);
     if (deliveryPrice !== undefined)
       restaurant.deliveryPrice = Number(deliveryPrice);
+
+    if (lat !== undefined && lng !== undefined) {
+      const parsedLat = Number(lat);
+      const parsedLng = Number(lng);
+
+      if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid lat/lng values",
+        });
+      }
+
+      restaurant.location = {
+        type: "Point",
+        coordinates: [parsedLng, parsedLat],
+      };
+    }
 
     if (cuisines) {
       try {

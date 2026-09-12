@@ -23,6 +23,24 @@ export const restaurantFromSchema = z.object({
   cuisines: z
     .array(z.string().min(1))
     .min(1, "At least one cuisine is required"),
+  // FIX: lat/lng now part of the validated schema instead of separate
+  // untyped state. Range-checked as real coordinates, and the (0,0)
+  // "null island" default is explicitly rejected since that was the
+  // exact bug ("Restaurant Location is [0,0]") from the original audit.
+  lat: z
+    .number({ invalid_type_error: "Latitude is required" })
+    .min(-90, "Latitude must be between -90 and 90")
+    .max(90, "Latitude must be between -90 and 90")
+    .refine((val) => val !== 0, {
+      message: "Please set a valid restaurant location",
+    }),
+  lng: z
+    .number({ invalid_type_error: "Longitude is required" })
+    .min(-180, "Longitude must be between -180 and 180")
+    .max(180, "Longitude must be between -180 and 180")
+    .refine((val) => val !== 0, {
+      message: "Please set a valid restaurant location",
+    }),
   imageFile: z
     .instanceof(File)
     .optional()

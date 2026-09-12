@@ -33,6 +33,7 @@ export const useOrderStore = create<OrderState>((set) => ({
 
       if (response.data.success) {
         if (response.data.paymentMethod === "cod") {
+          // COD order is already "confirmed" server-side — safe to clear immediately.
           toast.success(response.data.message);
           useCartStore.getState().clearCart();
           set((state) => ({
@@ -40,7 +41,12 @@ export const useOrderStore = create<OrderState>((set) => ({
           }));
           window.location.href = `/order/success?orderId=${response.data.order._id}`;
         } else if (response.data.session?.url) {
-          useCartStore.getState().clearCart();
+          // FIX: do NOT clear the cart here. The order is only "pending" at this
+          // point — the user hasn't paid yet. If they cancel on Stripe's page or
+          // the payment fails, the cart would already be empty with nothing to
+          // recover. Clear the cart only after payment is actually confirmed
+          // (e.g. on the /order/success page, once getOrderBySessionId or the
+          // webhook confirms status === "confirmed").
           window.location.href = response.data.session.url;
         }
       } else {
@@ -79,6 +85,13 @@ export const useOrderStore = create<OrderState>((set) => ({
       const response = await axios.get(`${API_END_POINT}/session/${sessionId}`);
       if (response.data.success) {
         const order = response.data.order;
+
+        // FIX: this is the natural place to clear the cart for Stripe orders —
+        // by the time this succeeds, the order is confirmed as paid.
+        if (order.status === "confirmed") {
+          useCartStore.getState().clearCart();
+        }
+
         set((state) => {
           const exists = state.orders.some((o) => o._id === order._id);
           if (!exists) return { orders: [order, ...state.orders] };

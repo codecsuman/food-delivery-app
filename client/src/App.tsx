@@ -2,7 +2,6 @@ import { createBrowserRouter, RouterProvider, Navigate, useParams } from "react-
 import { useEffect } from "react";
 import Login from "./auth/Login";
 import Signup from "./auth/Signup";
-import VerifyEmail from "./auth/VerifyEmail";
 import Home from "./components/Home";
 import MainLayout from "./layout/MainLayout";
 import Profile from "./components/Profile";
@@ -34,23 +33,19 @@ import { useOrderStore } from "./store/useOrderStore";
 // ======================= ROUTE GUARDS =======================
 
 const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, user } = useUserStore();
+  const { isAuthenticated } = useUserStore();
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
-  }
-
-  if (!user?.isVerified) {
-    return <Navigate to="/verify-email" replace />;
   }
 
   return <>{children}</>;
 };
 
 const AuthenticatedUser = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, user } = useUserStore();
+  const { isAuthenticated } = useUserStore();
 
-  if (isAuthenticated && user?.isVerified) {
+  if (isAuthenticated) {
     return <Navigate to="/" replace />;
   }
 
@@ -62,19 +57,29 @@ const AuthenticatedUser = ({ children }: { children: React.ReactNode }) => {
 function LiveTrackingPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const { orders }: any = useOrderStore();
-  
+
   const order = orders?.find((o: any) => o._id === orderId);
-  
-  // FIX: Handle restaurant as string or object, use any type
-  const restaurantCoords: [number, number] = (order as any)?.restaurant?.coordinates || [88.3639, 22.5726];
-  const customerCoords: [number, number] = (order as any)?.deliveryAddress?.coordinates || [88.3639, 22.5726];
-  
+
+  // FIX: restaurant.location is GeoJSON — coordinates are already [lng, lat],
+  // which is exactly the order LiveTracking.tsx expects. No flipping needed.
+  const restaurantGeoCoords = order?.restaurant?.location?.coordinates;
+  const restaurantCoords: [number, number] = restaurantGeoCoords
+    ? [restaurantGeoCoords[0], restaurantGeoCoords[1]]
+    : [88.3639, 22.5726]; // [lng, lat] fallback (Kolkata)
+
+  // FIX: deliveryDetails stores lat/lng as separate numeric fields.
+  // Build them into [lng, lat] to match LiveTracking's expected order.
+  const customerCoords: [number, number] =
+    order?.deliveryDetails?.lat != null && order?.deliveryDetails?.lng != null
+      ? [order.deliveryDetails.lng, order.deliveryDetails.lat]
+      : [88.3639, 22.5726]; // [lng, lat] fallback (Kolkata)
+
   return (
     <div className="max-w-4xl mx-auto py-10 px-4">
-      <LiveTracking 
-        orderId={orderId || "demo"} 
-        restaurantCoords={restaurantCoords} 
-        customerCoords={customerCoords} 
+      <LiveTracking
+        orderId={orderId || "demo"}
+        restaurantCoords={restaurantCoords}
+        customerCoords={customerCoords}
       />
     </div>
   );
@@ -132,11 +137,11 @@ const appRouter = createBrowserRouter([
             <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">
               Pick Delivery Address
             </h1>
-            <AddressPicker 
+            <AddressPicker
               onAddressSelect={(data) => {
                 console.log("Selected:", data);
                 localStorage.setItem("selectedAddress", JSON.stringify(data));
-              }} 
+              }}
             />
           </div>
         ),
@@ -199,14 +204,6 @@ const appRouter = createBrowserRouter([
     element: (
       <AuthenticatedUser>
         <Signup />
-      </AuthenticatedUser>
-    ),
-  },
-  {
-    path: "/verify-email",
-    element: (
-      <AuthenticatedUser>
-        <VerifyEmail />
       </AuthenticatedUser>
     ),
   },

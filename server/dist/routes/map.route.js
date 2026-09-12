@@ -1,9 +1,23 @@
 import { Router } from "express";
 import mapService from "../services/mapService.js";
 import { Restaurant } from "../models/restaurant.model.js";
+import { isAuthenticated } from "../middlewares/isAuthenticated.js";
 const router = Router();
+// Helper: reject missing/invalid/null-island coordinates
+const isValidCoordinate = (coords) => {
+    if (!Array.isArray(coords) || coords.length !== 2)
+        return false;
+    const [lng, lat] = coords;
+    if (typeof lng !== "number" || typeof lat !== "number")
+        return false;
+    if (Number.isNaN(lng) || Number.isNaN(lat))
+        return false;
+    if (lng === 0 && lat === 0)
+        return false; // reject "null island" — almost always a missing-data default
+    return true;
+};
 // ========== CUSTOMER: Validate Address & Pincode ==========
-router.post("/validate-address", async (req, res) => {
+router.post("/validate-address", isAuthenticated, async (req, res) => {
     try {
         const { address, pincode } = req.body;
         if (!address || !pincode) {
@@ -32,11 +46,11 @@ router.post("/validate-address", async (req, res) => {
     }
 });
 // ========== CUSTOMER: Check Delivery Availability ==========
-router.post("/check-delivery", async (req, res) => {
+router.post("/check-delivery", isAuthenticated, async (req, res) => {
     try {
         const { restaurantId, customerAddress, customerPincode } = req.body;
         const restaurant = await Restaurant.findById(restaurantId);
-        if (!restaurant || !restaurant.location?.coordinates) {
+        if (!restaurant || !isValidCoordinate(restaurant.location?.coordinates)) {
             return res
                 .status(404)
                 .json({ success: false, message: "Restaurant location not found" });
@@ -55,11 +69,17 @@ router.post("/check-delivery", async (req, res) => {
     }
 });
 // ========== RESTAURANT OWNER: Get Distance to Customer ==========
-router.post("/restaurant/distance", async (req, res) => {
+router.post("/restaurant/distance", isAuthenticated, async (req, res) => {
     try {
         const { customerCoords, restaurantId } = req.body;
+        if (!isValidCoordinate(customerCoords)) {
+            return res.status(400).json({
+                success: false,
+                message: "Valid customer coordinates required",
+            });
+        }
         const restaurant = await Restaurant.findById(restaurantId);
-        if (!restaurant?.location?.coordinates) {
+        if (!restaurant || !isValidCoordinate(restaurant.location?.coordinates)) {
             return res
                 .status(404)
                 .json({ success: false, message: "Restaurant location not set" });
@@ -72,9 +92,16 @@ router.post("/restaurant/distance", async (req, res) => {
     }
 });
 // ========== LIVE TRACKING: Get Route ==========
-router.post("/tracking/route", async (req, res) => {
+router.post("/tracking/route", isAuthenticated, async (req, res) => {
     try {
         const { driverCoords, customerCoords } = req.body;
+        if (!isValidCoordinate(driverCoords) ||
+            !isValidCoordinate(customerCoords)) {
+            return res.status(400).json({
+                success: false,
+                message: "Valid driver and customer coordinates required",
+            });
+        }
         const distanceData = await mapService.getDistanceAndTime(driverCoords, customerCoords);
         const routePoints = mapService.getRouteCoordinates(driverCoords, customerCoords);
         res.json({
@@ -87,7 +114,7 @@ router.post("/tracking/route", async (req, res) => {
     }
 });
 // ========== SIMPLE: Calculate delivery time by distance ==========
-router.post("/delivery-time", async (req, res) => {
+router.post("/delivery-time", isAuthenticated, async (req, res) => {
     try {
         const { distanceKm } = req.body;
         if (!distanceKm || distanceKm <= 0) {
@@ -103,10 +130,13 @@ router.post("/delivery-time", async (req, res) => {
     }
 });
 // ========== REVERSE GEOCODE (for map click) ==========
-router.post("/reverse-geocode", async (req, res) => {
+router.post("/reverse-geocode", isAuthenticated, async (req, res) => {
     try {
         const { lng, lat } = req.body;
-        if (!lng || !lat) {
+        if (typeof lng !== "number" ||
+            typeof lat !== "number" ||
+            Number.isNaN(lng) ||
+            Number.isNaN(lat)) {
             return res
                 .status(400)
                 .json({ success: false, message: "Longitude and latitude required" });

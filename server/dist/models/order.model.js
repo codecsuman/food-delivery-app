@@ -23,6 +23,8 @@ const orderSchema = new mongoose.Schema({
             trim: true,
         },
         city: { type: String, required: [true, "City is required"], trim: true },
+        lat: { type: Number },
+        lng: { type: Number },
     },
     cartItems: [
         {
@@ -80,6 +82,32 @@ const orderSchema = new mongoose.Schema({
         },
         default: "stripe",
     },
+    // FIX: added — these three fields were being written by trackingSocket.ts
+    // but never declared in the schema, so Mongoose silently dropped them.
+    currentEta: {
+        type: Number,
+        default: null,
+    },
+    currentDistance: {
+        type: Number,
+        default: null,
+    },
+    trackingHistory: [
+        {
+            location: {
+                type: [Number], // [lng, lat]
+                required: true,
+            },
+            status: {
+                type: String,
+                required: true,
+            },
+            timestamp: {
+                type: Date,
+                default: Date.now,
+            },
+        },
+    ],
 }, { timestamps: true });
 orderSchema.index({ user: 1 });
 orderSchema.index({ restaurant: 1 });

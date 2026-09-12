@@ -7,6 +7,8 @@ import mongoose from "mongoose";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
+const MIN_ORDER_AMOUNT = Number(process.env.MIN_ORDER_AMOUNT) || 50;
+
 type CheckoutSessionRequest = {
   cartItems: {
     menuId: string;
@@ -38,7 +40,10 @@ export const getOrders = async (req: Request, res: Response) => {
 
     const [orders, totalCount] = await Promise.all([
       Order.find({ user: req.id })
-        .populate("restaurant", "restaurantName imageUrl")
+        // FIX: added "location" so LiveTrackingPage (which reads from this list,
+        // not getOrderById) can actually resolve restaurant coordinates instead
+        // of always falling back to the hardcoded default.
+        .populate("restaurant", "restaurantName imageUrl location")
         .populate("user", "fullname email")
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -79,7 +84,7 @@ export const getOrderById = async (req: Request, res: Response) => {
     const order = await Order.findById(orderId)
       .populate(
         "restaurant",
-        "restaurantName imageUrl user lat lng deliveryTime deliveryPrice",
+        "restaurantName imageUrl user location deliveryTime deliveryPrice",
       )
       .populate("user", "fullname email");
 
@@ -141,10 +146,20 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
         .json({ success: false, message: "Restaurant not found" });
     }
 
-    const totalAmount = checkoutSessionRequest.cartItems.reduce(
+    const cartTotal = checkoutSessionRequest.cartItems.reduce(
       (sum, item) => sum + item.price * item.quantity,
       0,
     );
+    const deliveryFee = restaurant.deliveryPrice || 0;
+    const totalAmount = cartTotal + deliveryFee;
+
+    if (totalAmount < MIN_ORDER_AMOUNT) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum order amount is ₹${MIN_ORDER_AMOUNT}`,
+      });
+    }
+
     const paymentMethod = (req.body.paymentMethod as string) || "stripe";
 
     // ========== CASH ON DELIVERY (COD) ==========
@@ -181,6 +196,24 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
     }
 
     // ========== STRIPE PAYMENT ==========
+    let lineItems;
+    try {
+      lineItems = createLineItems(checkoutSessionRequest, restaurant.menus);
+    } catch (err: any) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+
+    if (deliveryFee > 0) {
+      lineItems.push({
+        price_data: {
+          currency: "inr",
+          product_data: { name: "Delivery Fee" } as any,
+          unit_amount: Math.round(deliveryFee * 100),
+        },
+        quantity: 1,
+      } as any);
+    }
+
     const order = await Order.create({
       restaurant: restaurant._id,
       user: req.id,
@@ -191,47 +224,51 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
       paymentMethod: "stripe",
     });
 
-    const lineItems = createLineItems(checkoutSessionRequest, restaurant.menus);
-
-    if (restaurant.deliveryPrice > 0) {
-      lineItems.push({
-        price_data: {
-          currency: "inr",
-          product_data: { name: "Delivery Fee" } as any,
-          unit_amount: Math.round(restaurant.deliveryPrice * 100),
+    try {
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        shipping_address_collection: {
+          allowed_countries: ["IN", "GB", "US", "CA"],
         },
-        quantity: 1,
-      } as any);
-    }
+        line_items: lineItems,
+        mode: "payment",
+        success_url: `${process.env.FRONTEND_URL}/order/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.FRONTEND_URL}/cart`,
+        metadata: {
+          orderId: order._id.toString(),
+          images: JSON.stringify(
+            checkoutSessionRequest.cartItems.map((item) => item.image),
+          ),
+        },
+        payment_intent_data: {
+          metadata: {
+            orderId: order._id.toString(),
+          },
+        },
+      });
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      shipping_address_collection: {
-        allowed_countries: ["IN", "GB", "US", "CA"],
-      },
-      line_items: lineItems,
-      mode: "payment",
-      success_url: `${process.env.FRONTEND_URL}/order/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL}/cart`,
-      metadata: {
-        orderId: order._id.toString(),
-        images: JSON.stringify(
-          checkoutSessionRequest.cartItems.map((item) => item.image),
-        ),
-      },
-    });
+      if (!session.url) {
+        await Order.findByIdAndDelete(order._id);
+        return res.status(400).json({
+          success: false,
+          message: "Error while creating checkout session",
+        });
+      }
 
-    if (!session.url) {
-      return res.status(400).json({
+      order.paymentIntentId = session.id;
+      await order.save();
+
+      return res
+        .status(200)
+        .json({ success: true, session, orderId: order._id });
+    } catch (stripeErr) {
+      await Order.findByIdAndDelete(order._id);
+      console.error("Stripe session creation failed:", stripeErr);
+      return res.status(500).json({
         success: false,
-        message: "Error while creating checkout session",
+        message: "Failed to create payment session",
       });
     }
-
-    order.paymentIntentId = session.id;
-    await order.save();
-
-    return res.status(200).json({ success: true, session, orderId: order._id });
   } catch (error) {
     console.error("Create checkout session error:", error);
     return res
@@ -269,7 +306,6 @@ export const cancelOrder = async (req: Request, res: Response) => {
       });
     }
 
-    // Only allow cancellation for orders that haven't been delivered yet
     const nonCancellableStatuses = ["delivered", "cancelled", "payment_failed"];
     if (nonCancellableStatuses.includes(order.status)) {
       return res.status(400).json({
@@ -278,15 +314,10 @@ export const cancelOrder = async (req: Request, res: Response) => {
       });
     }
 
-    // If Stripe payment and paymentIntentId exists, process refund
     if (order.paymentMethod === "stripe" && order.paymentIntentId) {
       try {
-        // paymentIntentId in your schema stores the session.id, but after webhook
-        // it gets updated to the actual payment_intent string.
-        // We need to handle both cases.
         let paymentIntentId = order.paymentIntentId;
 
-        // If it looks like a session ID (starts with cs_), retrieve the session to get payment_intent
         if (paymentIntentId.startsWith("cs_")) {
           const session =
             await stripe.checkout.sessions.retrieve(paymentIntentId);
@@ -301,7 +332,6 @@ export const cancelOrder = async (req: Request, res: Response) => {
         }
       } catch (refundError: any) {
         console.error("Stripe refund error:", refundError.message);
-        // Continue to cancel the order even if refund fails (log it)
       }
     }
 
@@ -389,13 +419,16 @@ export const stripeWebhook = async (req: Request, res: Response) => {
   if (event.type === "payment_intent.payment_failed") {
     try {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
-      const order = await Order.findOne({ paymentIntentId: paymentIntent.id });
-      if (order) {
-        if (order.status === "pending") {
-          order.status = "payment_failed";
-          await order.save();
-          console.log(`Order ${order._id} payment failed`);
-        }
+
+      const orderId = paymentIntent.metadata?.orderId;
+      const order = orderId
+        ? await Order.findById(orderId)
+        : await Order.findOne({ paymentIntentId: paymentIntent.id });
+
+      if (order && order.status === "pending") {
+        order.status = "payment_failed";
+        await order.save();
+        console.log(`Order ${order._id} payment failed`);
       }
     } catch (error) {
       console.error("Error handling payment failure:", error);
@@ -451,7 +484,7 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
     const order = await Order.findById(session.metadata.orderId)
       .populate(
         "restaurant",
-        "restaurantName imageUrl user lat lng deliveryTime deliveryPrice",
+        "restaurantName imageUrl user location deliveryTime deliveryPrice",
       )
       .populate("user", "fullname email");
 

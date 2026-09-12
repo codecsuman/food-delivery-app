@@ -4,7 +4,7 @@
 
 ### A full-stack food delivery & restaurant management platform built on the MERN stack
 
-<em>Order food, run a restaurant, manage everything — all in one app.</em>
+<em>Order food, run a restaurant, track deliveries live — all in one app.</em>
 
 <br/>
 
@@ -19,6 +19,7 @@
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-000000?style=flat-square&logo=express&logoColor=white)
 ![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=flat-square&logo=mongodb&logoColor=white)
+![Socket.IO](https://img.shields.io/badge/Socket.IO-010101?style=flat-square&logo=socket.io&logoColor=white)
 ![TailwindCSS](https://img.shields.io/badge/TailwindCSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
 ![Stripe](https://img.shields.io/badge/Stripe-626CD9?style=flat-square&logo=stripe&logoColor=white)
 ![Cloudinary](https://img.shields.io/badge/Cloudinary-3448C5?style=flat-square&logo=cloudinary&logoColor=white)
@@ -48,6 +49,7 @@
 - [Project Structure](#-project-structure)
 - [Getting Started](#-getting-started)
 - [Environment Variables](#-environment-variables)
+- [Deployment](#-deployment)
 - [How to Use](#-how-to-use)
 - [Order Lifecycle](#-order-lifecycle)
 - [API Reference](#-api-reference)
@@ -61,7 +63,7 @@
 
 ## 📝 About
 
-**Suman Food** is a production-ready, full-stack food ordering and restaurant management system. Any user can spin up their own restaurant storefront, manage a menu, and start taking orders — while customers browse, search, checkout with **Stripe or Cash on Delivery**, and track their order in real time from placement to delivery.
+**Suman Food** is a production-ready, full-stack food ordering and restaurant management system. Any user can spin up their own restaurant storefront, drop a pin on a map to set their exact location, manage a menu, and start taking orders — while customers browse, search, checkout with **Stripe or Cash on Delivery**, and watch their order move live on a map from the restaurant to their door.
 
 <div align="center">
 
@@ -80,12 +82,13 @@
 <td width="50%">
 
 ### 👤 For Customers
-- 🔐 Secure signup, login & email verification
+- 🔐 Secure signup & login (JWT, HTTP-only cookies)
 - 🔎 Real-time restaurant search with debounced input
 - 🎛️ Live filters — cuisine, dish/food name, price range & location, pulled straight from the database
 - 🛒 Add to cart & checkout with **Stripe or Cash on Delivery**
 - ❌ Cancel an order yourself — automatic Stripe refund if it was paid online
-- 📦 Live order tracking with an animated progress bar (Placed → Confirmed → Preparing → On the Way → Delivered)
+- 🗺️ **Live order tracking on a real map** — see the driver move in real time via Socket.IO, with live ETA and remaining distance
+- 📦 Animated status progress bar (Placed → Confirmed → Preparing → On the Way → Delivered)
 - 🗂️ Active vs Past orders, separated into tabs
 - 🔁 Reorder from a past order in one click
 - 🌗 Light / Dark mode toggle
@@ -96,6 +99,7 @@
 
 ### 🧑‍🍳 For Restaurant Owners
 - 🏪 Create & manage your own restaurant
+- 📍 **Set your exact location by dragging a pin on a map** (or one-tap "Use My Location") — powers accurate delivery distance and live tracking for your customers
 - 📋 Add / edit / delete menu items with images
 - 🖼️ Cloudinary-powered image uploads
 - 📬 Manage incoming orders live, including COD orders
@@ -110,23 +114,37 @@
 
 ## 🆕 What's New
 
-The latest update adds a complete order-management layer on top of the original checkout flow.
+This update is a full production-readiness pass — real-time tracking, accurate geolocation, and cross-origin deployment fixes on top of the original checkout flow.
 
-| Feature | Before | Now |
+| Area | Before | Now |
 |---|---|---|
-| **Payment methods** | Stripe only | Stripe **+ Cash on Delivery (COD)** |
+| **Payment methods** | Stripe only | Stripe **+ Cash on Delivery (COD)**, both correctly include delivery fee |
+| **Minimum order amount** | Not enforced | Enforced server-side before Stripe session creation (prevents Stripe's "amount too small" failures) |
+| **Order/payment integrity** | Order created before payment | Order created only after Stripe session succeeds, with automatic rollback on any failure — no orphan "pending" orders |
+| **Failed payments** | Never updated the order | Stripe webhook correctly matches failed payments back to the order via `PaymentIntent` metadata |
+| **Restaurant location** | Not collected — defaulted to `[0, 0]` | Owners set a real location by **dragging a pin on a map** or one-tap geolocation |
+| **Live order tracking** | Basic list only | **Real-time map tracking** via Socket.IO — live driver position, ETA, and route, authenticated per order |
+| **Cross-origin deployment** | Relative API paths (broke on Vercel) | All API calls use a full backend URL from environment variables |
+| **Cross-site auth cookies** | Cookie dropped silently on Vercel ↔ Render | Cookie correctly flagged `Secure` + `SameSite: none` in production, CORS supports multiple explicit origins |
+| **Email verification (OTP)** | Present, browser-inconsistent | Removed entirely — signup verifies the account immediately |
 | **Cancel order** | ❌ Not possible | ✅ Full flow with automatic Stripe refund |
-| **Order tracking** | Basic list | Animated progress bar + Active/Past tabs |
+| **Order tracking (status)** | Basic list | Animated progress bar + Active/Past tabs |
 | **Stripe webhook** | ❌ Missing | ✅ Confirms success, flags failed payments |
 | **Session recovery** | ❌ Missing | ✅ Order lookup by Stripe `session_id` after redirect |
 
 **Details:**
 
-- **Cash on Delivery (COD)** — `paymentMethod: "cod"` is accepted at checkout. COD orders are created with `status: "confirmed"` immediately, no Stripe session required.
-- **Order Cancellation** — `POST /api/v1/order/:orderId/cancel` validates that the requester owns the order, blocks cancellation once an order is `delivered`, `cancelled`, or `payment_failed`, and automatically issues a Stripe refund for orders that were paid online. The frontend exposes this as a red "Cancel Order" button (with a loading spinner) on orders still in the Active tab.
-- **Order Status Tracking** — `MyOrders.tsx` renders a color-coded, animated progress bar across five stages (`Placed → Confirmed → Preparing → On the Way → Delivered`), with orders split into **Active** and **Past** tabs.
+- **Cash on Delivery (COD)** — `paymentMethod: "cod"` is accepted at checkout. COD orders are created with `status: "confirmed"` immediately, no Stripe session required, and now correctly include the delivery fee in the total (previously only Stripe orders got this).
+- **Stripe minimum-amount protection** — orders below `MIN_ORDER_AMOUNT` (default ₹50, configurable via env) are rejected with a clear message *before* a Stripe session is ever created, instead of failing inside Stripe with a cryptic "amount must convert to at least 50 cents" error.
+- **No more orphan orders** — line items are validated and built before the order document is created; if Stripe session creation fails for any reason, the order is deleted instead of being left stuck in `pending` forever.
+- **Fixed failed-payment tracking** — the `orderId` is now attached directly to the Stripe PaymentIntent's own metadata via `payment_intent_data`, so the `payment_intent.payment_failed` webhook can actually find and update the correct order (previously it searched using the wrong ID field and never matched).
+- **Restaurant geolocation** — the restaurant admin form now includes an interactive Leaflet map. Owners drag a marker to their exact location or tap "Use My Location" for instant GPS placement — no manual coordinate entry required. This powers accurate delivery-distance calculation and live tracking maps for customers.
+- **Real-time order tracking** — `LiveTracking.tsx` renders a live Leaflet map with restaurant, customer, and driver markers, a live route line, and Socket.IO-powered position updates with ETA and remaining distance — authenticated per order so only the customer (or restaurant owner) can view it.
+- **Order Cancellation** — `POST /api/v1/order/:orderId/cancel` validates that the requester owns the order, blocks cancellation once an order is `delivered`, `cancelled`, or `payment_failed`, and automatically issues a Stripe refund for orders that were paid online.
 - **Order Details by Session ID** — `getOrderBySessionId` retrieves the correct order right after a Stripe redirect, using the `session_id` query param.
-- **Stripe Webhook** — a dedicated webhook controller listens for `checkout.session.completed` (confirms the order and stores the `paymentIntentId`) and `payment_intent.payment_failed` (marks the order as `payment_failed`).
+- **Stripe Webhook** — a dedicated webhook controller listens for `checkout.session.completed` (confirms the order and stores the `paymentIntentId`) and `payment_intent.payment_failed` (marks the order as `payment_failed`), with signature verification via `WEBHOOK_ENDPOINT_SECRET`.
+- **Cross-origin auth fixed** — cookies are now correctly issued with `secure: true` and `sameSite: "none"` when `NODE_ENV=production`, which is required for the frontend (Vercel) and backend (Render) living on different domains. CORS now accepts a comma-separated list of allowed origins instead of a single hardcoded one.
+- **Email verification removed** — the OTP/email-verification flow was removed as a feature; accounts are active immediately on signup. All related routes, store methods, and UI have been stripped out.
 
 <br/>
 
@@ -135,10 +153,10 @@ The latest update adds a complete order-management layer on top of the original 
 <div align="center">
 
 ### Backend
-`Node.js` · `Express` · `TypeScript` · `MongoDB + Mongoose` · `JWT` · `Cloudinary` · `Stripe (Checkout + Webhooks + Refunds)` · `Mailtrap` · `tsx`
+`Node.js` · `Express` · `TypeScript` · `MongoDB + Mongoose` · `Socket.IO` · `JWT` · `Cloudinary` · `Stripe (Checkout + Webhooks + Refunds)` · `OpenCage Geocoding`
 
 ### Frontend
-`React` · `Vite` · `TypeScript` · `Tailwind CSS` · `shadcn/ui` · `Zustand` · `React Router` · `Axios` · `Sonner`
+`React` · `Vite` · `TypeScript` · `Tailwind CSS` · `shadcn/ui` · `Zustand` · `React Router` · `Leaflet` · `Socket.IO Client` · `Axios` · `Sonner`
 
 </div>
 
@@ -149,32 +167,40 @@ The latest update adds a complete order-management layer on top of the original 
 <details>
 <summary><b>Click to expand full folder structure</b> 📂</summary>
 
-```
 food-app/
-├── server/                   # Backend
-│   ├── index.ts              # Main server file
-│   ├── controller/           # Route handlers (order.controller.ts now includes
-│   │                         #   COD checkout, cancelOrder, stripeWebhook, getOrderBySessionId)
-│   ├── routes/                # API routes (order.route.ts now includes /:orderId/cancel)
-│   ├── models/                # Database schemas
-│   ├── middlewares/           # Auth, upload, etc.
-│   ├── utils/                 # Helpers (Cloudinary, JWT)
-│   ├── db/                    # Database connection
-│   └── mailtrap/              # Email service
+├── server/ # Backend
+│ ├── index.ts # Main server file — CORS (multi-origin), Socket.IO setup, Stripe webhook mount
+│ ├── controller/
+│ │ ├── order.controller.ts # Checkout (Stripe + COD), min-amount validation, webhook, cancelOrder, getOrderBySessionId
+│ │ ├── restaurant.controller.ts # Create/update restaurant — now requires & stores lat/lng as GeoJSON
+│ │ └── user.controller.ts # Signup, login, logout, password reset (no email verification)
+│ ├── routes/
+│ │ └── map.route.ts # Geocoding + tracking-route endpoints, protected by auth
+│ ├── models/
+│ │ ├── order.model.ts # Includes deliveryDetails.lat/lng + live-tracking fields
+│ │ └── restaurant.model.ts # GeoJSON location: { type: "Point", coordinates: [lng, lat] }
+│ ├── middlewares/ # Auth, upload, etc.
+│ ├── socketHandlers/
+│ │ └── trackingSocket.ts # Authenticated Socket.IO namespace for live driver tracking
+│ ├── utils/ # Helpers (Cloudinary, JWT/cookie generation)
+│ └── db/ # Database connection
 │
-└── client/                   # Frontend
-    ├── src/
-    │   ├── components/        # UI components
-    │   ├── admin/              # Admin dashboard
-    │   ├── auth/                # Auth pages
-    │   ├── store/               # Zustand stores (useOrderStore.ts now supports
-    │   │                       #   paymentMethod + cancelOrder -> Promise<boolean>)
-    │   ├── types/                # TypeScript types
-    │   ├── schema/               # Zod validation schemas
-    │   └── layout/                # Layout components
-    ├── vite.config.ts
-    └── tailwind.config.js
-```
+└── client/ # Frontend
+├── src/
+│ ├── components/
+│ │ ├── LiveTracking.tsx # Real-time map: restaurant/customer/driver markers, route, ETA
+│ │ ├── AddressPicker.tsx # Customer delivery-address map picker
+│ │ └── DeliveryTimeEstimator.tsx / RestaurantDistanceChecker.tsx
+│ ├── admin/
+│ │ └── Restaurant.tsx # Restaurant form — drag-a-pin map instead of raw lat/lng inputs
+│ ├── auth/ # Auth pages
+│ ├── store/ # Zustand stores (useOrderStore, useUserStore, useRestaurantStore)
+│ ├── types/ # TypeScript types
+│ ├── schema/ # Zod validation schemas (restaurantSchema includes lat/lng)
+│ └── layout/ # Layout components
+├── vite.config.ts
+└── tailwind.config.js
+
 
 </details>
 
@@ -183,7 +209,7 @@ food-app/
 ## 🚀 Getting Started
 
 ### Prerequisites
-> `Node.js 18+` · `MongoDB` (local or Atlas) · `Git` · A `Stripe` account (test mode is fine)
+> `Node.js 18+` · `MongoDB` (local or Atlas) · `Git` · A `Stripe` account (test mode is fine) · An `OpenCage` API key (free tier, 2500 req/day)
 
 ### 1️⃣ Clone the repository
 ```bash
@@ -217,7 +243,9 @@ npm run dev
 
 ## 🔧 Environment Variables
 
-Create a `.env` file inside `server/`. **Never commit this file — use the placeholder values below as a template and keep real secrets out of Git.**
+### Backend — `server/.env`
+
+**Never commit this file — use the placeholder values below as a template and keep real secrets out of Git.**
 
 ```env
 # =========================
@@ -225,6 +253,7 @@ Create a `.env` file inside `server/`. **Never commit this file — use the plac
 # =========================
 PORT=8001
 NODE_ENV=development
+# Comma-separated list — add every deployed frontend origin here
 FRONTEND_URL=http://localhost:5173
 
 # =========================
@@ -251,12 +280,6 @@ CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
 
 # =========================
-# MAILTRAP
-# =========================
-MAILTRAP_API_TOKEN=your_mailtrap_token
-MAILTRAP_TEST_INBOX_ID=your_inbox_id
-
-# =========================
 # OPENCAGE (FREE GEOCODING - 2500 req/day)
 # =========================
 OPENCAGE_API_KEY=your_opencage_api_key
@@ -266,12 +289,34 @@ OPENCAGE_API_KEY=your_opencage_api_key
 # =========================
 DELIVERY_SPEED_KM_PER_MIN=0.333
 MAX_DELIVERY_RADIUS_KM=10
-MIN_ORDER_AMOUNT=99
+MIN_ORDER_AMOUNT=50
 ```
 
-> 💡 **Tip:** The app runs even without Cloudinary/Mailtrap configured — it falls back to placeholder images and console-logged emails.
->
-> 🔒 **Security note:** If a `.env` file with real credentials is ever exposed (chat, screenshot, commit), rotate every key immediately — MongoDB password, Stripe secret key, JWT secret, Cloudinary secret, and webhook secret — and make sure `.env` is listed in `.gitignore`.
+> ⚠️ **`NODE_ENV` must be set as a real environment variable on your hosting platform's dashboard (Render, Railway, etc.) — not just in a local `.env` file.** Node only loads `.env` via `dotenv`; it never reads `.env.production` automatically. Cookie security (`secure` + `sameSite: "none"`) depends entirely on `NODE_ENV === "production"` being true at runtime — if it isn't set correctly, cross-origin login will silently fail with a `401` on the very next request after login.
+
+### Frontend — `client/.env`
+
+```env
+VITE_API_BASE_URL=http://localhost:8001/api/v1
+VITE_SOCKET_URL=http://localhost:8001
+```
+
+> 💡 In production, point these at your deployed backend's full URL (e.g. `https://your-backend.onrender.com`). Never use relative paths (`/api/v1/...`) — they only work locally thanks to Vite's dev proxy and will 404 once the frontend and backend are on separate domains (e.g. Vercel + Render).
+
+<br/>
+
+## ☁️ Deployment
+
+**Frontend → Vercel**
+- Build Command: `npm run build`
+- Output Directory: `dist`
+- Set `VITE_API_BASE_URL` and `VITE_SOCKET_URL` to your live backend URL in Vercel's Environment Variables
+
+**Backend → Render**
+- Build Command: `npm install && npm run build`
+- Start Command: `npm start`
+- Set every variable from the `.env` template above directly in Render's **Environment** tab — including `NODE_ENV=production` and `FRONTEND_URL` set to your exact Vercel URL (no trailing slash)
+- Confirm the service is served over `https://` (Render does this by default) — cookies marked `secure: true` are dropped entirely over plain `http://`
 
 <br/>
 
@@ -284,8 +329,9 @@ MIN_ORDER_AMOUNT=99
 **🏪 Restaurant Owners**
 1. Sign up — every user is admin-enabled
 2. Go to **Dashboard → Restaurant**, create your storefront
-3. **Dashboard → Menu** — add food items with images
-4. **Dashboard → Orders** — manage incoming orders, including COD orders
+3. Drag the pin on the map (or tap "Use My Location") to set your exact delivery-origin point
+4. **Dashboard → Menu** — add food items with images
+5. **Dashboard → Orders** — manage incoming orders, including COD orders
 
 </td>
 <td width="50%" valign="top">
@@ -294,7 +340,7 @@ MIN_ORDER_AMOUNT=99
 1. Sign up for an account
 2. Browse or search restaurants by name/city/cuisine — filters update live as new cuisines/dishes are added
 3. Add items to cart & check out via **Stripe or Cash on Delivery**
-4. Track your order's live progress, or cancel it from the **Active Orders** tab if you change your mind
+4. Watch your order move live on the map, or cancel it from the **Active Orders** tab if you change your mind
 
 </td>
 </tr>
@@ -304,16 +350,16 @@ MIN_ORDER_AMOUNT=99
 
 ## 📦 Order Lifecycle
 
-```
 Placed → Confirmed → Preparing → On the Way → Delivered
-                │
-                └── Cancelled (customer-initiated, before Delivered)
-                └── Payment Failed (Stripe orders only, via webhook)
-```
+│
+└── Cancelled (customer-initiated, before Delivered)
+└── Payment Failed (Stripe orders only, via webhook)
+
 
 - **Stripe orders** move to `Confirmed` once the `checkout.session.completed` webhook fires; a failed payment attempt is caught by `payment_intent.payment_failed` and marks the order `payment_failed`.
 - **COD orders** skip the Stripe round-trip entirely and are created directly with `status: "confirmed"`.
 - **Cancellation** is only allowed while an order is still `pending` or `confirmed`. Cancelling a paid Stripe order automatically triggers a refund; cancelling a COD order simply updates its status.
+- **"On the Way"** status enables live map tracking — the customer sees the driver's position update in real time via Socket.IO, along with a live ETA and remaining distance.
 
 <br/>
 
@@ -324,7 +370,7 @@ Placed → Confirmed → Preparing → On the Way → Delivered
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
-| POST | `/api/v1/user/signup` | Register new user |
+| POST | `/api/v1/user/signup` | Register new user (active immediately, no email verification) |
 | POST | `/api/v1/user/login` | Login user |
 | POST | `/api/v1/user/logout` | Logout user |
 | GET | `/api/v1/user/check-auth` | Check authentication |
@@ -339,7 +385,7 @@ Placed → Confirmed → Preparing → On the Way → Delivered
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
-| POST | `/api/v1/restaurant/` | Create restaurant |
+| POST | `/api/v1/restaurant/` | Create restaurant — requires `lat`/`lng` |
 | GET | `/api/v1/restaurant/` | Get my restaurant |
 | PUT | `/api/v1/restaurant/` | Update restaurant |
 | GET | `/api/v1/restaurant/my-restaurants` | Get all my restaurants |
@@ -369,11 +415,24 @@ Placed → Confirmed → Preparing → On the Way → Delivered
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
-| POST | `/api/v1/order/checkout` | Create an order — `paymentMethod: "stripe"` starts a Checkout session, `paymentMethod: "cod"` confirms the order immediately |
+| POST | `/api/v1/order/checkout` | Create an order — `paymentMethod: "stripe"` starts a Checkout session (enforces `MIN_ORDER_AMOUNT`), `paymentMethod: "cod"` confirms the order immediately |
 | POST | `/api/v1/order/webhook` | Stripe webhook — handles `checkout.session.completed` and `payment_intent.payment_failed` |
-| GET | `/api/v1/order/` | Get my orders |
-| GET | `/api/v1/order/:sessionId` | Get order by Stripe session ID (used on redirect back from Stripe) |
+| GET | `/api/v1/order/` | Get my orders (restaurant location included for map tracking) |
+| GET | `/api/v1/order/:orderId` | Get single order by ID |
+| GET | `/api/v1/order/session/:sessionId` | Get order by Stripe session ID (used on redirect back from Stripe) |
 | POST | `/api/v1/order/:orderId/cancel` | Cancel an order — ownership + status checks, automatic Stripe refund for paid orders |
+
+</details>
+
+<details>
+<summary><b>🗺️ Map & Tracking</b></summary>
+
+| Method | Endpoint | Description |
+|--------|----------|--------------|
+| POST | `/api/v1/map/reverse-geocode` | Convert coordinates to a human-readable address |
+| POST | `/api/v1/map/tracking/route` | Get a route polyline between two points (used for the live tracking line) |
+
+All map routes require authentication.
 
 </details>
 
@@ -388,16 +447,21 @@ Planned features, not yet built:
 - [ ] "Order Now" button on menu items — skip the cart and go straight to checkout for a single item
 - [ ] Customer reviews — star ratings & comments on restaurants
 - [ ] Success animation on profile update confirmation
-- [ ] Delivery partner assignment & live location tracking
+- [ ] Delivery partner assignment as a real driver role (currently location updates are simulated/manual)
 
 <details>
 <summary><b>✅ Recently shipped</b></summary>
 
+- [x] Restaurant geolocation via drag-a-pin map (replaces missing/`[0,0]` coordinates)
+- [x] Real-time order tracking with live map, driver position, ETA, and route (Socket.IO + Leaflet)
+- [x] Stripe minimum-order-amount validation, preventing checkout failures on small carts
+- [x] Order/Stripe-session sequencing fix — no more orphaned pending orders
+- [x] Correct failed-payment webhook matching via PaymentIntent metadata
+- [x] Cross-origin cookie & CORS fixes for separate frontend/backend deployments
+- [x] Email verification (OTP) flow fully removed
 - [x] Cash on Delivery (COD) as a payment option alongside Stripe
 - [x] Order cancellation with automatic Stripe refunds
 - [x] Order status tracking with an animated progress bar
-- [x] Stripe webhook handling for payment success/failure
-- [x] Order recovery by Stripe session ID
 
 </details>
 
@@ -406,20 +470,40 @@ Planned features, not yet built:
 ## 🐛 Troubleshooting
 
 <details>
+<summary><b>Login succeeds but the very next request returns 401 Unauthorized</b></summary>
+
+This is a cross-origin cookie issue. If your frontend and backend are on **different domains** (e.g. Vercel + Render):
+
+1. Confirm `NODE_ENV=production` is set as an actual environment variable in your hosting dashboard — not just in a `.env` file, which most hosts don't auto-load.
+2. Confirm your backend is served over `https://` — `secure: true` cookies are silently dropped over plain `http://`.
+3. Confirm `FRONTEND_URL` on the backend exactly matches your deployed frontend origin (including `https://`, no trailing slash).
+</details>
+
+<details>
+<summary><b>"Restaurant location (lat/lng) is required" when creating/updating a restaurant</b></summary>
+
+Open **Dashboard → Restaurant** and drag the map pin to your location (or tap "Use My Location"). This is required so delivery distance and live tracking can be calculated correctly — restaurants can no longer default to `[0, 0]` coordinates.
+</details>
+
+<details>
+<summary><b>Checkout fails with a Stripe "amount must convert to at least 50 cents" error</b></summary>
+
+This is now caught before it reaches Stripe — if you still see it, your cart total is below `MIN_ORDER_AMOUNT` (default ₹50). Check the value set in your backend `.env`.
+</details>
+
+<details>
 <summary><b>Port already in use (EADDRINUSE)</b></summary>
 
 ```bash
 taskkill /F /IM node.exe
-npm run kill
-npm run restart
 ```
-Or double-click `start.bat` — it auto-kills the old process.
+Then restart with `npm run dev`.
 </details>
 
 <details>
 <summary><b>Module not found (ERR_MODULE_NOT_FOUND)</b></summary>
 
-All imports use `.ts` extensions for ESM compatibility — make sure you're on the latest files.
+All backend imports use `.js` extensions on relative paths (required for NodeNext ESM module resolution) — make sure you're on the latest files and haven't stripped the extensions during an edit.
 </details>
 
 <details>
@@ -438,12 +522,6 @@ Check your Cloudinary credentials in `.env` — otherwise the app falls back to 
 </details>
 
 <details>
-<summary><b>Emails not sending</b></summary>
-
-Check Mailtrap credentials in `.env` — otherwise emails are logged to console for testing.
-</details>
-
-<details>
 <summary><b>Stripe webhook not firing locally</b></summary>
 
 Use the Stripe CLI to forward events to your local server:
@@ -456,58 +534,6 @@ Copy the `whsec_...` value it prints into `WEBHOOK_ENDPOINT_SECRET` in your `.en
 </details>
 
 <details>
-<summary><b>Cancel Order button not showing / cancellation fails</b></summary>
+<summary><b>Live tracking map shows the wrong location / falls back to a default</b></summary>
 
-- The button only appears for orders in `pending` or `confirmed` status, in the **Active Orders** tab.
-- Only the order's owner can cancel it — confirm you're logged in as the account that placed the order.
-- If the order was paid via Stripe, cancellation triggers a refund call — check your Stripe dashboard's Logs tab if it fails.
-</details>
-
-<br/>
-
-## 🔒 Security
-
-- ✅ JWT tokens stored in **HTTP-only cookies**
-- ✅ Passwords hashed with **bcrypt**
-- ✅ Image uploads validated for type & size
-- ✅ CORS locked to frontend origin only
-- ✅ Users can only manage their own restaurant & orders
-- ✅ Order cancellation enforces ownership and status checks before touching Stripe
-- ✅ Stripe webhook signature verified with `WEBHOOK_ENDPOINT_SECRET` before trusting any event
-- ✅ `.env` excluded via `.gitignore` — real secrets are never committed; use `.env.example` with dummy values instead
-
-<br/>
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome!
-
-```bash
-1. Fork the project
-2. Create your feature branch  → git checkout -b feature/AmazingFeature
-3. Commit your changes        → git commit -m "Add some AmazingFeature"
-4. Push to the branch         → git push origin feature/AmazingFeature
-5. Open a Pull Request
-```
-
-<br/>
-
-## 📄 License
-
-Distributed under the **ISC License**.
-
-<br/>
-
-<div align="center">
-
-### Built with ❤️ using
-
-[React](https://react.dev/) · [Express](https://expressjs.com/) · [MongoDB](https://www.mongodb.com/) · [Tailwind CSS](https://tailwindcss.com/) · [shadcn/ui](https://ui.shadcn.com/) · [Stripe](https://stripe.com/)
-
-<br/>
-
-⭐ **If you found this project useful, consider giving it a star!** ⭐
-
-[![GitHub Stars](https://img.shields.io/github/stars/codecsuman/food-delivery-app?style=for-the-badge&logo=github&color=yellow)](https://github.com/codecsuman/food-delivery-app/stargazers)
-
-</div>
+Confirm the order's restaurant document actually has `location.coordinates` set (create/update the restaurant via the map picker if it doesn't), and that your `getOrders`

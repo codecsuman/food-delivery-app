@@ -131,48 +131,6 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-// ======================= VERIFY EMAIL =======================
-export const verifyEmail = async (req: Request, res: Response) => {
-  try {
-    const { verificationCode } = req.body;
-
-    if (!verificationCode) {
-      return res.status(400).json({
-        success: false,
-        message: "Verification code is required",
-      });
-    }
-
-    const user = await User.findOne({
-      verificationToken: verificationCode,
-      verificationTokenExpiresAt: { $gt: Date.now() },
-    }).select("-password");
-
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid or expired verification token",
-      });
-    }
-
-    user.isVerified = true;
-    user.verificationToken = undefined;
-    user.verificationTokenExpiresAt = undefined;
-    await user.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Email verified successfully",
-      user,
-    });
-  } catch (error) {
-    console.error("Verify email error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Internal server error" });
-  }
-};
-
 // ======================= LOGOUT =======================
 export const logout = async (_req: Request, res: Response) => {
   try {

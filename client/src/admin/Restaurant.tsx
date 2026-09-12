@@ -6,8 +6,22 @@ import {
   restaurantFromSchema,
 } from "@/schema/restaurantSchema";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
-import { ImageIcon, Loader2, Store, Upload } from "lucide-react";
+import { ImageIcon, Loader2, Store, Upload, LocateFixed } from "lucide-react";
 import { FormEvent, useEffect, useState, useRef } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+
+let DefaultIcon = L.icon({
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+const DEFAULT_CENTER: [number, number] = [22.5726, 88.3639]; // Kolkata fallback
 
 const Restaurant = () => {
   const [input, setInput] = useState<RestaurantFormSchema>({
@@ -17,11 +31,19 @@ const Restaurant = () => {
     deliveryTime: 0,
     deliveryPrice: 0,
     cuisines: [],
+    lat: 0,
+    lng: 0,
     imageFile: undefined,
   });
-  const [errors, setErrors] = useState<Partial<RestaurantFormSchema>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof RestaurantFormSchema, string>>>({});
   const [previewImage, setPreviewImage] = useState<string>("");
+  const [fetchingLocation, setFetchingLocation] = useState(false);
   const hasFetched = useRef(false);
+
+  // Map + draggable marker refs, replacing raw lat/lng number inputs
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<L.Map | null>(null);
+  const marker = useRef<L.Marker | null>(null);
 
   const {
     loading,
@@ -42,13 +64,84 @@ const Restaurant = () => {
     }
   };
 
+  // Keeps the marker + form state in sync whenever the pin moves,
+  // whether from a drag, a map click, or "Use My Location".
+  const setPinPosition = (lat: number, lng: number) => {
+    setInput((prev) => ({ ...prev, lat, lng }));
+    setErrors((prev) => ({ ...prev, lat: undefined, lng: undefined }));
+
+    if (map.current && marker.current) {
+      marker.current.setLatLng([lat, lng]);
+      map.current.setView([lat, lng], 15);
+    }
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setErrors((prev) => ({ ...prev, lat: "Geolocation is not supported by this browser" }));
+      return;
+    }
+
+    setFetchingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setPinPosition(position.coords.latitude, position.coords.longitude);
+        setFetchingLocation(false);
+      },
+      (err) => {
+        setErrors((prev) => ({
+          ...prev,
+          lat:
+            err.code === err.PERMISSION_DENIED
+              ? "Location permission denied. Drag the pin on the map instead."
+              : "Could not fetch location. Drag the pin on the map instead.",
+        }));
+        setFetchingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  // Initialize the map once, with a draggable marker the user can
+  // move by hand, and a click-to-place shortcut on the map itself.
+  useEffect(() => {
+    if (!mapContainer.current || map.current) return;
+
+    const startLat = input.lat || DEFAULT_CENTER[0];
+    const startLng = input.lng || DEFAULT_CENTER[1];
+
+    map.current = L.map(mapContainer.current).setView([startLat, startLng], input.lat ? 15 : 4);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(map.current);
+
+    marker.current = L.marker([startLat, startLng], { draggable: true }).addTo(map.current);
+
+    marker.current.on("dragend", () => {
+      const pos = marker.current!.getLatLng();
+      setPinPosition(pos.lat, pos.lng);
+    });
+
+    map.current.on("click", (e: L.LeafletMouseEvent) => {
+      setPinPosition(e.latlng.lat, e.latlng.lng);
+    });
+
+    return () => {
+      map.current?.remove();
+      map.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const submitHandler = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     const result = restaurantFromSchema.safeParse(input);
     if (!result.success) {
       const fieldErrors = result.error.formErrors.fieldErrors;
-      setErrors(fieldErrors as Partial<RestaurantFormSchema>);
+      setErrors(fieldErrors as Partial<Record<keyof RestaurantFormSchema, string>>);
       return;
     }
 
@@ -61,6 +154,8 @@ const Restaurant = () => {
     formData.append("deliveryTime", input.deliveryTime.toString());
     formData.append("deliveryPrice", input.deliveryPrice.toString());
     formData.append("cuisines", JSON.stringify(input.cuisines));
+    formData.append("lat", input.lat.toString());
+    formData.append("lng", input.lng.toString());
 
     if (input.imageFile) {
       formData.append("imageFile", input.imageFile);
@@ -86,6 +181,11 @@ const Restaurant = () => {
       const fetchedRestaurant = useRestaurantStore.getState().restaurant;
 
       if (fetchedRestaurant) {
+        const coords = (fetchedRestaurant as any)?.location?.coordinates;
+        const hasCoords = Array.isArray(coords) && coords.length === 2;
+        const lat = hasCoords ? coords[1] : 0;
+        const lng = hasCoords ? coords[0] : 0;
+
         setInput({
           restaurantName: fetchedRestaurant.restaurantName || "",
           city: fetchedRestaurant.city || "",
@@ -93,16 +193,24 @@ const Restaurant = () => {
           deliveryTime: fetchedRestaurant.deliveryTime || 0,
           deliveryPrice: fetchedRestaurant.deliveryPrice || 0,
           cuisines: fetchedRestaurant.cuisines || [],
+          lat,
+          lng,
           imageFile: undefined,
         });
 
         if (fetchedRestaurant.imageUrl) {
           setPreviewImage(fetchedRestaurant.imageUrl);
         }
+
+        // Re-center the map + pin once existing coordinates load
+        if (hasCoords) {
+          setPinPosition(lat, lng);
+        }
       }
     };
 
     fetchRestaurant();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -260,6 +368,45 @@ const Restaurant = () => {
               )}
             </div>
 
+            {/* Restaurant Location — simple pin-drop map, no raw numbers */}
+            <div className="space-y-2 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-gray-700 dark:text-gray-300 font-medium">
+                  Restaurant Location
+                </Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={useCurrentLocation}
+                  disabled={fetchingLocation}
+                  variant="outline"
+                  className="h-9 border-gray-200 dark:border-gray-600 rounded-lg"
+                >
+                  {fetchingLocation ? (
+                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <LocateFixed className="mr-2 h-3.5 w-3.5 text-orange-500" />
+                  )}
+                  Use My Location
+                </Button>
+              </div>
+
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Tap "Use My Location", or just drag the pin to your restaurant's exact spot.
+              </p>
+
+              <div
+                ref={mapContainer}
+                className="h-64 w-full rounded-xl border border-gray-200 dark:border-gray-600 overflow-hidden"
+              />
+
+              {(errors.lat || errors.lng) && (
+                <span className="text-xs text-red-500 font-medium">
+                  {errors.lat || errors.lng}
+                </span>
+              )}
+            </div>
+
             {/* Image Upload */}
             <div className="space-y-2 md:col-span-2">
               <Label className="text-gray-700 dark:text-gray-300 font-medium">
@@ -300,9 +447,11 @@ const Restaurant = () => {
                   </p>
                 </div>
               </div>
-              {errors.imageFile?.name && (
+              {/* FIX: errors.imageFile is a plain string now (same type as every
+                  other field's error), so read it directly instead of `.name` */}
+              {errors.imageFile && (
                 <span className="text-xs text-red-500 font-medium">
-                  {errors.imageFile.name}
+                  {errors.imageFile}
                 </span>
               )}
             </div>

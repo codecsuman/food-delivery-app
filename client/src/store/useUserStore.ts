@@ -39,7 +39,6 @@ type UserState = {
   loading: boolean;
   signup: (input: SignupInputState) => Promise<boolean>;
   login: (input: LoginInputState) => Promise<boolean>;
-  verifyEmail: (verificationCode: string) => Promise<boolean>;
   checkAuthentication: () => Promise<void>;
   logout: () => Promise<void>;
   forgotPassword: (email: string) => Promise<boolean>;
@@ -96,28 +95,6 @@ export const useUserStore = create<UserState>()(
           if (response.data.success) {
             toast.success(response.data.message);
             set({ user: response.data.user, isAuthenticated: true });
-            return true;
-          }
-          return false;
-        } catch (error: any) {
-          toast.error(getErrorMessage(error));
-          return false;
-        } finally {
-          set({ loading: false });
-        }
-      },
-
-      verifyEmail: async (verificationCode: string) => {
-        try {
-          set({ loading: true });
-          const response = await axios.post(
-            `${API_END_POINT}/verify-email`,
-            { verificationCode },
-            { headers: { "Content-Type": "application/json" } },
-          );
-          if (response.data.success) {
-            toast.success(response.data.message);
-            await get().checkAuthentication();
             return true;
           }
           return false;

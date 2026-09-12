@@ -5,6 +5,8 @@ type DeliveryDetails = {
   name: string;
   address: string;
   city: string;
+  lat?: number;
+  lng?: number;
 };
 
 type CartItems = {
@@ -13,6 +15,13 @@ type CartItems = {
   image: string;
   price: number;
   quantity: number;
+};
+
+// FIX: new type for trackingHistory entries written by trackingSocket.ts
+type TrackingHistoryEntry = {
+  location: [number, number]; // [lng, lat]
+  status: string;
+  timestamp: Date;
 };
 
 export type OrderStatus =
@@ -33,6 +42,9 @@ export interface IOrder extends Document {
   status: OrderStatus;
   paymentIntentId?: string;
   paymentMethod?: "stripe" | "cod";
+  currentEta?: number; // FIX: added — written by trackingSocket.ts
+  currentDistance?: number; // FIX: added — written by trackingSocket.ts
+  trackingHistory?: TrackingHistoryEntry[]; // FIX: added — written by trackingSocket.ts
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +74,8 @@ const orderSchema = new mongoose.Schema<IOrder>(
         trim: true,
       },
       city: { type: String, required: [true, "City is required"], trim: true },
+      lat: { type: Number },
+      lng: { type: Number },
     },
     cartItems: [
       {
@@ -119,6 +133,32 @@ const orderSchema = new mongoose.Schema<IOrder>(
       },
       default: "stripe",
     },
+    // FIX: added — these three fields were being written by trackingSocket.ts
+    // but never declared in the schema, so Mongoose silently dropped them.
+    currentEta: {
+      type: Number,
+      default: null,
+    },
+    currentDistance: {
+      type: Number,
+      default: null,
+    },
+    trackingHistory: [
+      {
+        location: {
+          type: [Number], // [lng, lat]
+          required: true,
+        },
+        status: {
+          type: String,
+          required: true,
+        },
+        timestamp: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   { timestamps: true },
 );

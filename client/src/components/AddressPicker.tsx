@@ -18,6 +18,10 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
+// FIX: use the full backend URL instead of a relative path, so this works on
+// Vercel (which has no dev-server proxy) as well as locally.
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
+
 interface AddressPickerProps {
   onAddressSelect: (data: {
     address: string;
@@ -36,7 +40,7 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
 
   const [address, setAddress] = useState(initialAddress);
   const [pincode, setPincode] = useState(initialPincode);
-const [, setCoordinates] = useState<[number, number] | null>(null);
+  const [, setCoordinates] = useState<[number, number] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -59,9 +63,10 @@ const [, setCoordinates] = useState<[number, number] | null>(null);
       setCoordinates([lng, lat]);
       placeMarker([lat, lng]);
 
-      // Reverse geocode — FIXED: added credentials: 'include'
+      // Reverse geocode
       try {
-        const res = await fetch("/api/v1/map/reverse-geocode", {
+        // FIX: relative path → full backend URL
+        const res = await fetch(`${API_BASE_URL}/map/reverse-geocode`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -133,8 +138,8 @@ const [, setCoordinates] = useState<[number, number] | null>(null);
     setError("");
 
     try {
-      // FIXED: added credentials: 'include'
-      const validateRes = await fetch("/api/v1/map/validate-address", {
+      // FIX: relative path → full backend URL
+      const validateRes = await fetch(`${API_BASE_URL}/map/validate-address`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

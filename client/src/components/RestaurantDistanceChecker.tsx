@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-// FIX: Removed unused MapPin import
 import { Navigation, CheckCircle, XCircle, Loader2 } from "lucide-react";
+
+// FIX: full backend URL instead of relative path — required for Vercel deploys
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
 
 interface RestaurantDistanceCheckerProps {
   restaurantId: string;
@@ -19,9 +21,11 @@ const RestaurantDistanceChecker = ({ restaurantId }: RestaurantDistanceCheckerPr
     setLoading(true);
     try {
       // First geocode customer address
-      const geoRes = await fetch("/api/v1/map/validate-address", {
+      // FIX: relative path → full backend URL, added credentials: "include"
+      const geoRes = await fetch(`${API_BASE_URL}/map/validate-address`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ address: customerAddress, pincode: customerPincode }),
       });
       const geoData = await geoRes.json();
@@ -33,11 +37,13 @@ const RestaurantDistanceChecker = ({ restaurantId }: RestaurantDistanceCheckerPr
       }
 
       // Then get distance from restaurant
-      const distRes = await fetch("/api/v1/map/restaurant/distance", {
+      // FIX: relative path → full backend URL, added credentials: "include"
+      const distRes = await fetch(`${API_BASE_URL}/map/restaurant/distance`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           restaurantId,
           customerCoords: geoData.coordinates,

@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Timer, MapPin, Navigation } from "lucide-react";
 
+// FIX: full backend URL instead of relative path — required for Vercel deploys
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
+
 interface DeliveryTimeEstimatorProps {
   restaurantId: string;
   customerCoords: {
@@ -18,9 +21,13 @@ const DeliveryTimeEstimator = ({ restaurantId, customerCoords }: DeliveryTimeEst
   useEffect(() => {
     const fetchDeliveryInfo = async () => {
       try {
-        const res = await fetch("/api/v1/map/check-delivery", {
+        // FIX: relative path → full backend URL, and added credentials:
+        // "include" so the auth cookie is sent (this route now requires
+        // isAuthenticated on the backend).
+        const res = await fetch(`${API_BASE_URL}/map/check-delivery`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             restaurantId,
             customerAddress: customerCoords.address,

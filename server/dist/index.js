@@ -28,12 +28,32 @@ import { stripeWebhook } from "./controller/order.controller.js";
 const app = express();
 const PORT = process.env.PORT || 8001;
 // =========================
+// CORS: SUPPORT MULTIPLE ORIGINS
+// =========================
+// FIX: FRONTEND_URL can now be a comma-separated list, e.g.
+// FRONTEND_URL=http://localhost:5173,https://suman-food.vercel.app
+// Falls back to localhost only if nothing is set (dev default).
+const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+const corsOriginCheck = (origin, callback) => {
+    // Allow non-browser requests (curl, server-to-server, health checks) with no Origin header
+    if (!origin)
+        return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+    }
+    console.warn(`❌ Blocked by CORS: ${origin}`);
+    return callback(new Error("Not allowed by CORS"));
+};
+// =========================
 // HTTP SERVER & SOCKET.IO
 // =========================
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {
     cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+        origin: allowedOrigins, // FIX: was a single string, now supports the full list
         credentials: true,
     },
 });
@@ -42,7 +62,7 @@ setupTrackingSocket(io);
 // MIDDLEWARE
 // =========================
 app.use(cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: corsOriginCheck, // FIX: was a single hardcoded origin, now checks against the list
     credentials: true,
 }));
 // Stripe webhook MUST be before express.json() — needs raw body
@@ -90,6 +110,7 @@ const startServer = async () => {
         const server = httpServer.listen(PORT, () => {
             console.log(`✅ Server running on port ${PORT}`);
             console.log(`✅ Socket.IO ready for live tracking`);
+            console.log(`✅ Allowed origins: ${allowedOrigins.join(", ")}`);
         });
         const gracefulShutdown = (signal) => {
             console.log(`\n${signal} received. Shutting down gracefully...`);
