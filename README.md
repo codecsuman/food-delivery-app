@@ -91,6 +91,9 @@
 - 📦 Animated status progress bar (Placed → Confirmed → Preparing → On the Way → Delivered)
 - 🗂️ Active vs Past orders, separated into tabs
 - 🔁 Reorder from a past order in one click
+- ⭐ Leave star ratings & written reviews on restaurants
+- ⚡ "Order Now" button on menu items — skip the cart, go straight to checkout
+- 🌟 Browse featured restaurants & menu items on the home page carousel
 - 🌗 Light / Dark mode toggle
 - 📱 Fully responsive design
 
@@ -104,6 +107,9 @@
 - 🖼️ Cloudinary-powered image uploads
 - 📬 Manage incoming orders live, including COD orders
 - 💳 Secure Stripe payment processing with webhook-verified confirmation
+- 🌟 Mark restaurants/menu items as "Featured" for home page placement
+- 🚴 Assign a real delivery partner (driver role) to an order
+- 🧭 Dedicated owner navbar — Dashboard / My Restaurants / Orders
 - 📊 Full admin dashboard
 
 </td>
@@ -432,18 +438,17 @@ All map routes require authentication.
 
 ## 🗺 Roadmap
 
-Planned features, not yet built:
-
-- [ ] **Featured Restaurants & Menu Items** — restaurant owners get a toggle to mark items/restaurants as "Featured," surfaced in a home page carousel
-- [ ] Separate navbar views for restaurant owners (Dashboard/My Restaurants/Orders) vs. regular customers (Home/Explore/Orders)
-- [ ] "Order Now" button on menu items — skip the cart and go straight to checkout for a single item
-- [ ] Customer reviews — star ratings & comments on restaurants
-- [ ] Success animation on profile update confirmation
-- [ ] Delivery partner assignment as a real driver role (currently location updates are simulated/manual)
+All previously planned features have now shipped. 🎉
 
 <details>
 <summary><b>✅ Recently shipped</b></summary>
 
+- [x] **Featured Restaurants & Menu Items** — restaurant owners can mark items/restaurants as "Featured," surfaced in a home page carousel
+- [x] Separate navbar views for restaurant owners (Dashboard/My Restaurants/Orders) vs. regular customers (Home/Explore/Orders)
+- [x] "Order Now" button on menu items — skips the cart and goes straight to checkout for a single item
+- [x] Customer reviews — star ratings & comments on restaurants
+- [x] Success animation on profile update confirmation
+- [x] Delivery partner assignment as a real driver role (replaces simulated/manual location updates)
 - [x] Restaurant geolocation via drag-a-pin map (replaces missing/`[0,0]` coordinates)
 - [x] Real-time order tracking with live map, driver position, ETA, and route (Socket.IO + Leaflet)
 - [x] Stripe minimum-order-amount validation, preventing checkout failures on small carts
@@ -456,6 +461,8 @@ Planned features, not yet built:
 - [x] Order status tracking with an animated progress bar
 
 </details>
+
+> Have an idea for what's next? Open an issue — see [Contributing](#-contributing).
 
 <br/>
 
