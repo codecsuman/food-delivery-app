@@ -576,7 +576,7 @@ This project is licensed under the **ISC License** — see the `LICENSE` file fo
 
 <div align="center">
 
-**Built with ❤️ by [Suman Jha](https://github.com/codecsuman)**
+**Built with ❤️ by [Suman Jhanp](https://github.com/codecsuman)**
 
 ⭐ Star this repo if you found it useful!
 
