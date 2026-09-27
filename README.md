@@ -49,7 +49,7 @@
 - [Project Structure](#-project-structure)
 - [Getting Started](#-getting-started)
 - [Environment Variables](#-environment-variables)
-- [Deployment](#-deployment)
+- [Deployment](#️-deployment)
 - [How to Use](#-how-to-use)
 - [Order Lifecycle](#-order-lifecycle)
 - [API Reference](#-api-reference)
@@ -167,8 +167,31 @@ This update is a full production-readiness pass — real-time tracking, accurate
 <details>
 <summary><b>Click to expand full folder structure</b> 📂</summary>
 
-
-
+```
+food-delivery-app/
+├── client/                      # React + Vite + TypeScript frontend
+│   ├── src/
+│   │   ├── components/          # Reusable UI components (shadcn/ui based)
+│   │   ├── pages/                # Route-level pages (Home, Dashboard, Orders, etc.)
+│   │   ├── store/                # Zustand state stores (user, restaurant, order, cart)
+│   │   ├── lib/                  # Axios instance, socket client, helpers
+│   │   └── App.tsx
+│   ├── .env
+│   └── package.json
+│
+├── server/                      # Node.js + Express + TypeScript backend
+│   ├── src/
+│   │   ├── controllers/          # Route handlers (user, restaurant, menu, order, map)
+│   │   ├── models/                # Mongoose schemas
+│   │   ├── routes/                # Express routers
+│   │   ├── middlewares/           # Auth, error handling
+│   │   ├── sockets/                # Socket.IO event handlers (live tracking)
+│   │   └── index.ts
+│   ├── .env
+│   └── package.json
+│
+└── README.md
+```
 
 </details>
 
@@ -318,11 +341,12 @@ VITE_SOCKET_URL=http://localhost:8001
 
 ## 📦 Order Lifecycle
 
+```
 Placed → Confirmed → Preparing → On the Way → Delivered
-│
-└── Cancelled (customer-initiated, before Delivered)
-└── Payment Failed (Stripe orders only, via webhook)
-
+   │
+   ├── Cancelled (customer-initiated, before Delivered)
+   └── Payment Failed (Stripe orders only, via webhook)
+```
 
 - **Stripe orders** move to `Confirmed` once the `checkout.session.completed` webhook fires; a failed payment attempt is caught by `payment_intent.payment_failed` and marks the order `payment_failed`.
 - **COD orders** skip the Stripe round-trip entirely and are created directly with `status: "confirmed"`.
@@ -504,4 +528,56 @@ Copy the `whsec_...` value it prints into `WEBHOOK_ENDPOINT_SECRET` in your `.en
 <details>
 <summary><b>Live tracking map shows the wrong location / falls back to a default</b></summary>
 
-Confirm the order's restaurant document actually has `location.coordinates` set (create/update the restaurant via the map picker if it doesn't), and that your `getOrders`
+Confirm the order's restaurant document actually has `location.coordinates` set (create/update the restaurant via the map picker if it doesn't), and that your `getOrders` controller is populating the restaurant field so the frontend receives its coordinates. Also check the browser console for a Socket.IO connection error — the client needs `VITE_SOCKET_URL` set to the deployed backend URL, not `localhost`, in production.
+</details>
+
+<details>
+<summary><b>Live tracking never updates / socket connects but no position events arrive</b></summary>
+
+1. Confirm the order is in the `On the Way` status — position broadcasts are scoped to that stage.
+2. Check that the socket connection is authenticated for that specific `orderId` (open two browser tabs and confirm both join the same room).
+3. If deployed on Render's free tier, the backend may be asleep — the first request after inactivity can take 30–60 seconds to wake it up.
+</details>
+
+<br/>
+
+## 🔒 Security
+
+- Passwords are hashed before storage and never returned in any API response.
+- Authentication uses HTTP-only JWT cookies — tokens are inaccessible to client-side JavaScript, reducing XSS exposure.
+- Cookies are issued with `secure: true` and `sameSite: "none"` in production, and `sameSite: "lax"` in development.
+- Stripe webhook payloads are verified against `WEBHOOK_ENDPOINT_SECRET` before being trusted — unsigned or tampered requests are rejected.
+- Order and tracking routes check resource ownership server-side (a customer cannot view or cancel another customer's order).
+- Environment files (`.env`) are git-ignored; never commit real API keys or secrets — rotate any credential that was ever pushed to a public repo.
+
+Found a security issue? Please open a private report rather than a public issue — see [Contributing](#-contributing) for contact details.
+
+<br/>
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome!
+
+1. Fork the repository
+2. Create your feature branch: `git checkout -b feature/amazing-feature`
+3. Commit your changes: `git commit -m "Add some amazing feature"`
+4. Push to the branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
+
+Please keep PRs focused on a single feature or fix, and describe what changed and why in the PR description.
+
+<br/>
+
+## 📄 License
+
+This project is licensed under the **ISC License** — see the `LICENSE` file for details.
+
+<br/>
+
+<div align="center">
+
+**Built with ❤️ by [Suman Jha](https://github.com/codecsuman)**
+
+⭐ Star this repo if you found it useful!
+
+</div>
