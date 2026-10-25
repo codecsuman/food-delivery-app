@@ -14,6 +14,7 @@ import { useMenuStore } from "@/store/useMenuStore";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { MenuItem } from "@/types/restaurantType";
 import { Loader2 } from "lucide-react";
+import { getImageUrl, handleImageError } from "@/lib/placeholder";
 import {
   Dispatch,
   FormEvent,
@@ -66,6 +67,11 @@ const EditMenu = ({
 
     setError({});
 
+    if (!selectedMenu?._id) {
+      setEditOpen(false);
+      return;
+    }
+
     const formData = new FormData();
     formData.append("name", input.name);
     formData.append("description", input.description);
@@ -75,15 +81,15 @@ const EditMenu = ({
     }
 
     try {
-      const updatedMenu = await editMenu(selectedMenu?._id!, formData);
+      const updatedMenu = await editMenu(selectedMenu._id, formData);
 
       if (updatedMenu) {
         updateMenuToRestaurant(updatedMenu);
         setEditOpen(false);
         resetForm();
       }
-    } catch (error) {
-      console.error("Edit menu error:", error);
+    } catch {
+      // Edit menu error - silent
     }
   };
 
@@ -172,7 +178,8 @@ const EditMenu = ({
             <Label className="text-gray-700 dark:text-gray-300 font-medium">Menu Image</Label>
             {previewImage && (
               <img
-                src={previewImage}
+                src={getImageUrl(previewImage)}
+                onError={handleImageError}
                 alt="Current"
                 className="w-20 h-20 object-cover rounded-xl border border-gray-200 dark:border-gray-600 shadow-sm"
               />

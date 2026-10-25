@@ -5,6 +5,7 @@ type DeliveryDetails = {
   name: string;
   address: string;
   city: string;
+  pincode: string;
   lat?: number;
   lng?: number;
 };
@@ -44,6 +45,11 @@ export interface IOrder extends Document {
   paymentMethod?: "stripe" | "cod";
   currentEta?: number; // FIX: added — written by trackingSocket.ts
   currentDistance?: number; // FIX: added — written by trackingSocket.ts
+  // Latest known driver position, stored on every accepted update so a
+  // customer opening the tracking page sees the current location immediately
+  // instead of waiting for the next socket event (or seeing the restaurant).
+  driverLocation?: [number, number]; // [lng, lat]
+  driverLocationUpdatedAt?: Date;
   trackingHistory?: TrackingHistoryEntry[]; // FIX: added — written by trackingSocket.ts
   createdAt: Date;
   updatedAt: Date;
@@ -74,6 +80,12 @@ const orderSchema = new mongoose.Schema<IOrder>(
         trim: true,
       },
       city: { type: String, required: [true, "City is required"], trim: true },
+      pincode: {
+        type: String,
+        trim: true,
+        match: [/^\d{6}$/, "Pincode must be exactly 6 digits"],
+        default: "",
+      },
       lat: { type: Number },
       lng: { type: Number },
     },
@@ -85,7 +97,7 @@ const orderSchema = new mongoose.Schema<IOrder>(
           required: [true, "Item name is required"],
           trim: true,
         },
-        image: { type: String, required: [true, "Item image is required"] },
+        image: { type: String, default: "" },
         price: {
           type: Number,
           required: [true, "Price is required"],
@@ -141,6 +153,14 @@ const orderSchema = new mongoose.Schema<IOrder>(
     },
     currentDistance: {
       type: Number,
+      default: null,
+    },
+    driverLocation: {
+      type: [Number], // [lng, lat]
+      default: undefined,
+    },
+    driverLocationUpdatedAt: {
+      type: Date,
       default: null,
     },
     trackingHistory: [

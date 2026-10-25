@@ -33,7 +33,6 @@ import {
   Sheet,
   SheetClose,
   SheetContent,
-  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
@@ -302,7 +301,7 @@ const MobileNavbar = () => {
         </SheetHeader>
         <Separator className="my-2" />
 
-        <SheetDescription className="flex-1 space-y-1">
+        <div className="flex-1 space-y-1">
           <Link to="/" className={linkClass}>
             <Home className="w-5 h-5" />
             <span>Home</span>
@@ -341,7 +340,7 @@ const MobileNavbar = () => {
             <PackageCheck className="w-5 h-5" />
             <span>Orders</span>
           </Link>
-        </SheetDescription>
+        </div>
 
         <SheetFooter className="flex flex-col gap-4">
           <div className="flex flex-row items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-500/10 dark:to-amber-500/10">

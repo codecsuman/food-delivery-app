@@ -1,4 +1,4 @@
-import { Loader2, LocateIcon, Mail, MapPin, MapPinnedIcon, Plus, Phone, UserCircle2, Store, Trash2, Star, CheckCircle } from "lucide-react";
+import { Loader2, Mail, Phone, UserCircle2, Store, Trash2, Star, CheckCircle, MapPin as MapPinIcon, ArrowRight, Target, Plus, LocateFixed } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { FormEvent, useRef, useState, useEffect } from "react";
 import { Input } from "./ui/input";
@@ -7,19 +7,26 @@ import { Button } from "./ui/button";
 import { useUserStore } from "@/store/useUserStore";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { Link } from "react-router-dom";
+import AddressPicker from "./AddressPicker";
+import { useCurrentLocation } from "@/hooks/useCurrentLocation";
+import { getImageUrl, handleImageError } from "@/lib/placeholder";
 
 const Profile = () => {
   const { user, updateProfile, loading } = useUserStore();
   const { restaurants, getUserRestaurants, deleteRestaurant, loading: restaurantLoading } = useRestaurantStore();
   const imageRef = useRef<HTMLInputElement | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [useMapPicker, setUseMapPicker] = useState(false);
 
   const [profileData, setProfileData] = useState({
     fullname: "",
     email: "",
     contact: "",
+    alternateContact: "",
     address: "",
+    pincode: "",
     city: "",
+    state: "",
     country: "",
     profilePicture: "",
   });
@@ -36,14 +43,34 @@ const Profile = () => {
         fullname: user.fullname || "",
         email: user.email || "",
         contact: user.contact ? String(user.contact) : "",
+        alternateContact: user.alternateContact ? String(user.alternateContact) : "",
         address: user.address || "",
+        pincode: user.pincode || "",
         city: user.city || "",
+        state: user.state || "",
         country: user.country || "",
         profilePicture: user.profilePicture || "",
       });
       setSelectedProfilePicture(user.profilePicture || "");
     }
   }, [user]);
+
+  // Use the reusable hook for current location
+  const { fetchLocation, loading: locationLoading, error: locationError } = useCurrentLocation();
+
+  const handleUseMyLocation = async () => {
+    const location = await fetchLocation();
+    if (location) {
+      setProfileData((prev) => ({
+        ...prev,
+        address: location.address,
+        pincode: location.pincode || prev.pincode,
+        city: location.city || prev.city,
+        state: location.state || prev.state,
+        country: location.country || prev.country,
+      }));
+    }
+  };
 
   const fileChangeHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -72,16 +99,21 @@ const Profile = () => {
     const payload: any = {};
     if (profileData.fullname !== user?.fullname) payload.fullname = profileData.fullname;
     if (profileData.contact !== String(user?.contact || "")) payload.contact = profileData.contact;
+    if (profileData.alternateContact !== String(user?.alternateContact || "")) payload.alternateContact = profileData.alternateContact;
     if (profileData.address !== user?.address) payload.address = profileData.address;
+    if (profileData.pincode !== user?.pincode) payload.pincode = profileData.pincode;
     if (profileData.city !== user?.city) payload.city = profileData.city;
+    if (profileData.state !== user?.state) payload.state = profileData.state;
     if (profileData.country !== user?.country) payload.country = profileData.country;
     if (profileData.profilePicture !== user?.profilePicture) payload.profilePicture = profileData.profilePicture;
 
     if (Object.keys(payload).length === 0) return;
 
-    await updateProfile(payload);
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+    const updated = await updateProfile(payload);
+    if (updated) {
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    }
   };
 
   const getInitials = (name: string) => {
@@ -149,21 +181,138 @@ const Profile = () => {
           </div>
           <div className="space-y-2">
             <Label className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
-              <LocateIcon className="w-4 h-4 text-gray-400" /> Address
+              <Phone className="w-4 h-4 text-gray-400" /> Alternate Phone (Optional)
             </Label>
-            <Input name="address" value={profileData.address} onChange={changeHandler} placeholder="Street address" className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+            <Input type="tel" name="alternateContact" value={profileData.alternateContact} onChange={changeHandler} placeholder="Alternate 10-digit phone number" maxLength={10} className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
           </div>
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
-              <MapPin className="w-4 h-4 text-gray-400" /> City
-            </Label>
-            <Input name="city" value={profileData.city} onChange={changeHandler} placeholder="Your city" className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
-          </div>
+          
+          {/* Address Section with Map Picker */}
           <div className="space-y-2 md:col-span-2">
-            <Label className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
-              <MapPinnedIcon className="w-4 h-4 text-gray-400" /> Country
-            </Label>
-            <Input name="country" value={profileData.country} onChange={changeHandler} placeholder="Your country" className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
+                <MapPinIcon className="w-4 h-4 text-gray-400" /> Address
+              </Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setUseMapPicker(!useMapPicker)}
+                className="h-9 text-xs gap-1"
+              >
+                {useMapPicker ? (
+                  <>
+                    <Target className="w-3.5 h-3.5" />
+                    Use Manual Input
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    Use Map Picker
+                  </>
+                )}
+              </Button>
+            </div>
+            
+            {useMapPicker ? (
+              <AddressPicker
+                onAddressSelect={(data) => {
+                  setProfileData((prev) => ({
+                    ...prev,
+                    address: data.address,
+                    pincode: data.pincode,
+                    city: data.city || data.formattedAddress.split(",").slice(-3, -2)[0]?.trim() || prev.city,
+                    state: data.state || prev.state,
+                    country: data.country || data.formattedAddress.split(",").pop()?.trim() || prev.country,
+                  }));
+                  setUseMapPicker(false);
+                }}
+                initialAddress={profileData.address}
+                initialPincode={profileData.pincode}
+              />
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label className="text-gray-700 dark:text-gray-300 font-medium">Street Address</Label>
+                  <Input name="address" value={profileData.address} onChange={changeHandler} placeholder="Enter your street address" className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+                </div>
+                
+                {/* Use My Location Button - Auto-fills City, Pincode, Country */}
+                <div className="space-y-2">
+                  <Label className="text-gray-700 dark:text-gray-300 font-medium">Quick Fill Location</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleUseMyLocation}
+                    disabled={locationLoading}
+                    className="w-full h-12 gap-2 justify-start bg-white dark:bg-gray-800 border-orange-200 dark:border-orange-500/30 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10"
+                  >
+                    {locationLoading ? (
+                      <>
+                        <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                        Detecting location...
+                      </>
+                    ) : (
+                      <>
+                        <LocateFixed className="mr-2 w-4 h-4 text-orange-500" />
+                        Use My Location (Auto-fill City, Pincode, Country)
+                      </>
+                    )}
+                  </Button>
+                  {locationError && <p className="text-sm text-red-500">{locationError}</p>}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-gray-700 dark:text-gray-300 font-medium">Pincode</Label>
+                    <Input 
+                      type="text" 
+                      name="pincode" 
+                      value={profileData.pincode} 
+                      onChange={async (e) => {
+                        const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                        setProfileData((prev) => ({ ...prev, pincode: value }));
+                        
+                        // Auto-fetch city/state from pincode when 6 digits entered
+                        if (value.length === 6) {
+                          try {
+                            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+                            const res = await fetch(`${API_BASE_URL}/map/pincode/${value}`);
+                            const data = await res.json();
+                            if (data.success) {
+                              setProfileData((prev) => ({
+                                ...prev,
+                                city: data.city || prev.city,
+                                state: data.state || prev.state,
+                                country: data.country || prev.country,
+                              }));
+                            }
+                          } catch (err) {
+                            console.warn("Pincode lookup failed:", err);
+                          }
+                        }
+                      }} 
+                      placeholder="6-digit pincode (auto-fills city/state)" 
+                      maxLength={6} 
+                      className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-gray-700 dark:text-gray-300 font-medium">City</Label>
+                    <Input name="city" value={profileData.city} onChange={changeHandler} placeholder="City" className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-gray-700 dark:text-gray-300 font-medium">State</Label>
+                    <Input name="state" value={profileData.state} onChange={changeHandler} placeholder="State" className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-gray-700 dark:text-gray-300 font-medium">Country</Label>
+                    <Input name="country" value={profileData.country} onChange={changeHandler} placeholder="Country" className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -196,7 +345,7 @@ const Profile = () => {
           <div className="space-y-3">
             {restaurants.map((restaurant) => (
               <div key={restaurant._id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-700">
-                <img src={restaurant.imageUrl} alt={restaurant.restaurantName} className="w-16 h-16 rounded-xl object-cover" />
+                <img src={getImageUrl(restaurant.imageUrl)} onError={handleImageError} alt={restaurant.restaurantName} className="w-16 h-16 rounded-xl object-cover" />
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 dark:text-white truncate">{restaurant.restaurantName}</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">{restaurant.city}, {restaurant.country}</p>

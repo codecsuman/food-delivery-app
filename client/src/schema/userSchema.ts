@@ -42,7 +42,15 @@ export const userProfileSchema = z.object({
     .regex(/^\d+$/, "Contact number must contain only digits")
     .optional()
     .or(z.literal("")),
+  alternateContact: z
+    .string()
+    .min(10, "Alternate contact must be exactly 10 digits")
+    .max(10, "Alternate contact must be exactly 10 digits")
+    .regex(/^\d+$/, "Alternate contact must contain only digits")
+    .optional()
+    .or(z.literal("")),
   address: z.string().max(200).optional(),
+  pincode: z.string().max(6).optional(),
   city: z.string().max(50).optional(),
   country: z.string().max(50).optional(),
 });

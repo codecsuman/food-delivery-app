@@ -39,17 +39,23 @@ const Contact = () => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      // TODO: Replace with actual API endpoint when backend contact form is implemented
+      // await axios.post(`${import.meta.env.VITE_API_BASE_URL}/contact`, formData);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      
+      setIsSubmitting(false);
+      setIsSent(true);
+      toast.success("Message sent successfully! We'll get back to you soon.");
 
-    setIsSubmitting(false);
-    setIsSent(true);
-    toast.success("Message sent successfully! We'll get back to you soon.");
-
-    setTimeout(() => {
-      setIsSent(false);
-      setFormData({ name: "", email: "", subject: "", message: "" });
-    }, 3000);
+      setTimeout(() => {
+        setIsSent(false);
+        setFormData({ name: "", email: "", subject: "", message: "" });
+      }, 3000);
+    } catch {
+      setIsSubmitting(false);
+      toast.error("Failed to send message. Please try again.");
+    }
   };
 
   const contactInfo = [

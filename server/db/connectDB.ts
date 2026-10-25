@@ -1,4 +1,8 @@
 import mongoose from "mongoose";
+import {
+  logTransactionSupport,
+  resetTransactionSupportCache,
+} from "../utils/transactions.js";
 
 const connectDB = async () => {
   try {
@@ -16,32 +20,31 @@ const connectDB = async () => {
 
     const conn = await mongoose.connect(process.env.MONGO_URI, options);
 
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
-
     // Event listeners for connection health
     mongoose.connection.on("error", (err) => {
-      console.error("❌ MongoDB connection error:", err);
+      // MongoDB connection error
     });
 
     mongoose.connection.on("disconnected", () => {
-      console.warn("⚠️ MongoDB disconnected");
+      // A topology change cannot be trusted until the connection is back.
+      resetTransactionSupportCache();
     });
 
     mongoose.connection.on("reconnected", () => {
-      console.log("✅ MongoDB reconnected");
+      // Re-probe transactions after a reconnect (e.g. MongoDB was converted
+      // from standalone to a replica set while the API was running).
+      resetTransactionSupportCache();
     });
+
+    await logTransactionSupport();
 
     // Graceful shutdown
     process.on("SIGINT", async () => {
       await mongoose.connection.close();
-      console.log("👋 MongoDB connection closed due to app termination");
       process.exit(0);
     });
   } catch (error) {
-    console.error("❌ MongoDB Connection Failed");
-    console.error(error);
-
-    // Don't exit in test environment
+    // MongoDB Connection Failed
     if (process.env.NODE_ENV !== "test") {
       process.exit(1);
     }

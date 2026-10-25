@@ -10,12 +10,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Trash2, UtensilsCrossed, Pencil } from "lucide-react";
-import React, { FormEvent, useState } from "react";
+import { Loader2, Plus, Trash2, UtensilsCrossed, Pencil, Store } from "lucide-react";
+import React, { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import EditMenu from "./EditMenu";
 import { MenuFormSchema, menuSchema } from "@/schema/menuSchema";
 import { useMenuStore } from "@/store/useMenuStore";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
+import { getImageUrl, handleImageError } from "@/lib/placeholder";
 
 const AddMenu = () => {
   const [input, setInput] = useState<MenuFormSchema>({
@@ -30,8 +32,24 @@ const AddMenu = () => {
   const [error, setError] = useState<Partial<MenuFormSchema>>({});
   const [previewImage, setPreviewImage] = useState<string>("");
 
-  const { loading, createMenu, deleteMenu } = useMenuStore();
-  const { restaurant, addMenuToRestaurant, removeMenuFromRestaurant } = useRestaurantStore();
+  const { loading: menuLoading, createMenu, deleteMenu } = useMenuStore();
+  const {
+    restaurant,
+    loading: restaurantLoading,
+    getRestaurant,
+    addMenuToRestaurant,
+    removeMenuFromRestaurant,
+  } = useRestaurantStore();
+
+  const menus = restaurant?.menus ?? [];
+
+  // BUG FIX: this page relied on a stale persisted `restaurant` from
+  // localStorage and never refreshed it, so menus added on another device /
+  // in another session were missing until the user visited Dashboard →
+  // Restaurant. Fetch the owner's restaurant on mount.
+  useEffect(() => {
+    getRestaurant();
+  }, [getRestaurant]);
 
   const changeEventHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
@@ -56,10 +74,18 @@ const AddMenu = () => {
 
     setError({});
 
+    if (!restaurant?._id) return;
+
     const formData = new FormData();
     formData.append("name", input.name);
     formData.append("description", input.description);
     formData.append("price", input.price.toString());
+    if (restaurant?._id) {
+      // Owners can have multiple restaurants; without this the backend falls
+      // back to the owner's first restaurant and the menu is attached to the
+      // wrong one.
+      formData.append("restaurantId", restaurant._id);
+    }
     if (input.image) {
       formData.append("image", input.image);
     }
@@ -72,8 +98,8 @@ const AddMenu = () => {
         setOpen(false);
         resetForm();
       }
-    } catch (error) {
-      console.error("Create menu error:", error);
+    } catch {
+      // Create menu error - silent
     }
   };
 
@@ -91,8 +117,8 @@ const AddMenu = () => {
       if (success) {
         removeMenuFromRestaurant(menuId);
       }
-    } catch (error) {
-      console.error("Delete menu error:", error);
+    } catch {
+      // Delete menu error - silent
     }
   };
 
@@ -111,7 +137,11 @@ const AddMenu = () => {
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-lg shadow-orange-500/25 rounded-xl px-5">
+              <Button
+                disabled={!restaurant?._id}
+                title={!restaurant?._id ? "Create a restaurant first" : undefined}
+                className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-lg shadow-orange-500/25 rounded-xl px-5 disabled:opacity-50"
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 Add Menu
               </Button>
@@ -217,7 +247,7 @@ const AddMenu = () => {
                 </div>
 
                 <DialogFooter className="mt-6">
-                  {loading ? (
+                  {menuLoading ? (
                     <Button disabled className="bg-orange-500 rounded-lg w-full">
                       <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                       Please wait
@@ -237,7 +267,28 @@ const AddMenu = () => {
         </div>
 
         {/* Menu List */}
-        {restaurant?.menus?.length === 0 ? (
+        {restaurantLoading && !restaurant ? (
+          <div className="flex items-center justify-center py-24">
+            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+          </div>
+        ) : !restaurant ? (
+          <div className="flex flex-col items-center justify-center text-center py-24 px-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/30">
+            <div className="h-14 w-14 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center mb-4">
+              <Store className="h-7 w-7 text-orange-500" />
+            </div>
+            <p className="text-gray-600 dark:text-gray-300 font-medium">
+              No restaurant yet
+            </p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1 mb-5">
+              Create your restaurant first, then you can add menu items.
+            </p>
+            <Link to="/admin/restaurant">
+              <Button className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg">
+                Create Restaurant
+              </Button>
+            </Link>
+          </div>
+        ) : menus.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center py-24 px-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/30">
             <div className="h-14 w-14 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center mb-4">
               <UtensilsCrossed className="h-7 w-7 text-orange-500" />
@@ -251,13 +302,14 @@ const AddMenu = () => {
           </div>
         ) : (
           <div className="grid gap-4">
-            {restaurant?.menus.map((menu: any) => (
+            {menus.map((menu: any) => (
               <div
                 key={menu._id}
                 className="group flex flex-col md:flex-row md:items-center gap-5 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm hover:shadow-lg border border-gray-100 dark:border-gray-700 transition-all duration-200 hover:-translate-y-0.5"
               >
                 <img
-                  src={menu.image}
+                  src={getImageUrl(menu.image)}
+                  onError={handleImageError}
                   alt={menu.name}
                   className="md:h-24 md:w-24 h-40 w-full object-cover rounded-xl ring-1 ring-black/5"
                 />

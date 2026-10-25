@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOrderStore } from "@/store/useOrderStore";
+import { getRestaurantId } from "@/lib/validation";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Separator } from "./ui/separator";
@@ -165,10 +166,9 @@ const MyOrders = () => {
               typeof order.restaurant === "string"
                 ? "Restaurant"
                 : (order.restaurant as any)?.restaurantName || "Restaurant";
-            const restaurantId =
-              typeof order.restaurant === "string"
-                ? order.restaurant
-                : (order.restaurant as any)?._id;
+            const restaurantId = getRestaurantId(
+              order.restaurant as string | { _id?: string } | null | undefined,
+            );
             const items = order.cartItems || [];
             const deliveryAddress =
               order.deliveryDetails?.address || "Delivery address";
@@ -271,18 +271,30 @@ const MyOrders = () => {
                         Cancel Order
                       </Button>
                     )}
-                    <Link
-                      to={`/restaurant/${restaurantId}`}
-                      className="flex-1 min-w-[120px]"
-                    >
+                    {restaurantId ? (
+                      <Link
+                        to={`/restaurant/${restaurantId}`}
+                        className="flex-1 min-w-[120px]"
+                      >
+                        <Button
+                          variant="outline"
+                          className="w-full rounded-xl border-gray-200 dark:border-gray-700 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-600 dark:hover:text-orange-400 transition-all"
+                        >
+                          Reorder
+                          <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
+                      </Link>
+                    ) : (
                       <Button
                         variant="outline"
-                        className="w-full rounded-xl border-gray-200 dark:border-gray-700 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-600 dark:hover:text-orange-400 transition-all"
+                        disabled
+                        title="This order is missing a valid restaurant id"
+                        className="flex-1 min-w-[120px] rounded-xl border-gray-200 dark:border-gray-700"
                       >
                         Reorder
                         <ChevronRight className="w-4 h-4 ml-1" />
                       </Button>
-                    </Link>
+                    )}
                   </div>
                 </div>
 

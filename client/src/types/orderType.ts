@@ -11,6 +11,7 @@ export type CheckoutSessionRequest = {
     email: string;
     address: string;
     city: string;
+    pincode?: string;
     lat?: number; // FIX: added — backend now accepts/stores this
     lng?: number; // FIX: added — backend now accepts/stores this
   };
@@ -47,6 +48,7 @@ export interface Orders {
     name: string;
     address: string;
     city: string;
+    pincode?: string;
     lat?: number; // FIX: added
     lng?: number; // FIX: added
   };
@@ -63,6 +65,9 @@ export interface Orders {
   paymentMethod?: "stripe" | "cod";
   currentEta?: number; // FIX: added — written by trackingSocket.ts
   currentDistance?: number; // FIX: added — written by trackingSocket.ts
+  /** Latest known driver position, [lng, lat] — persisted by trackingSocket.ts */
+  driverLocation?: [number, number];
+  driverLocationUpdatedAt?: string | null;
   trackingHistory?: TrackingHistoryEntry[]; // FIX: added — written by trackingSocket.ts
   createdAt: string;
   updatedAt: string;

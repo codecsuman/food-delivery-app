@@ -12,8 +12,11 @@ type User = {
   fullname: string;
   email: string;
   contact: number | null;
+  alternateContact: number | null;
   address: string;
+  pincode: string;
   city: string;
+  state: string;
   country: string;
   profilePicture: string;
   admin: boolean;
@@ -26,8 +29,11 @@ type ProfileUpdateInput = {
   fullname?: string;
   email?: string;
   contact?: string | number;
+  alternateContact?: string | number;
   address?: string;
+  pincode?: string;
   city?: string;
+  state?: string;
   country?: string;
   profilePicture?: string;
 };
@@ -41,8 +47,6 @@ type UserState = {
   login: (input: LoginInputState) => Promise<boolean>;
   checkAuthentication: () => Promise<void>;
   logout: () => Promise<void>;
-  forgotPassword: (email: string) => Promise<boolean>;
-  resetPassword: (token: string, newPassword: string) => Promise<boolean>;
   updateProfile: (input: ProfileUpdateInput) => Promise<boolean>;
   setUser: (user: User | null) => void;
   refreshUser: () => Promise<void>;
@@ -125,7 +129,7 @@ export const useUserStore = create<UserState>()(
         } catch (error: any) {
           set({ user: null, isAuthenticated: false, isCheckingAuth: false });
           if (error?.response?.status !== 401) {
-            console.error("Auth check error:", error);
+            // Auth check error - silent
           }
         }
       },
@@ -144,46 +148,6 @@ export const useUserStore = create<UserState>()(
           }
         } catch (error: any) {
           toast.error(getErrorMessage(error));
-        } finally {
-          set({ loading: false });
-        }
-      },
-
-      forgotPassword: async (email: string) => {
-        try {
-          set({ loading: true });
-          const response = await axios.post(
-            `${API_END_POINT}/forgot-password`,
-            { email },
-          );
-          if (response.data.success) {
-            toast.success(response.data.message);
-            return true;
-          }
-          return false;
-        } catch (error: any) {
-          toast.error(getErrorMessage(error));
-          return false;
-        } finally {
-          set({ loading: false });
-        }
-      },
-
-      resetPassword: async (token: string, newPassword: string) => {
-        try {
-          set({ loading: true });
-          const response = await axios.post(
-            `${API_END_POINT}/reset-password/${token}`,
-            { newPassword },
-          );
-          if (response.data.success) {
-            toast.success(response.data.message);
-            return true;
-          }
-          return false;
-        } catch (error: any) {
-          toast.error(getErrorMessage(error));
-          return false;
         } finally {
           set({ loading: false });
         }
@@ -221,8 +185,8 @@ export const useUserStore = create<UserState>()(
           if (response.data.success) {
             set({ user: response.data.user });
           }
-        } catch (error: any) {
-          console.error("Refresh user error:", error);
+        } catch {
+          // Refresh user error - silent
         }
       },
     }),

@@ -1,12 +1,7 @@
 import { Request, Response } from "express";
 import { User } from "../models/user.model.js";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
-import {
-  uploadImage,
-  deleteImage,
-  getPublicIdFromUrl,
-} from "../utils/cloudinary.js";
+import { uploadImage, deleteImage, getPublicIdFromUrl } from "../utils/cloudinary.js";
 import { generateToken, clearToken } from "../utils/generateToken.js";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -68,7 +63,6 @@ export const signup = async (req: Request, res: Response) => {
       user: userWithoutPassword,
     });
   } catch (error: any) {
-    console.error("Signup error:", error);
     if (error.code === 11000 && error.keyPattern?.email) {
       return res.status(409).json({
         success: false,
@@ -123,8 +117,7 @@ export const login = async (req: Request, res: Response) => {
       message: `Welcome back ${user.fullname}`,
       user: userWithoutPassword,
     });
-  } catch (error) {
-    console.error("Login error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -139,98 +132,7 @@ export const logout = async (_req: Request, res: Response) => {
       success: true,
       message: "Logged out successfully",
     });
-  } catch (error) {
-    console.error("Logout error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Internal server error" });
-  }
-};
-
-// ======================= FORGOT PASSWORD =======================
-export const forgotPassword = async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is required",
-      });
-    }
-
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      return res.status(200).json({
-        success: true,
-        message:
-          "If an account exists for this email, a reset link has been sent",
-      });
-    }
-
-    const resetToken = crypto.randomBytes(40).toString("hex");
-    const resetTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
-
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordTokenExpiresAt = resetTokenExpiresAt;
-    await user.save();
-
-    const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    console.log(`\n🔐 Password Reset URL for ${email}:`);
-    console.log(resetURL);
-    console.log(`\n`);
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "If an account exists for this email, a reset link has been sent",
-    });
-  } catch (error) {
-    console.error("Forgot password error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Internal server error" });
-  }
-};
-
-// ======================= RESET PASSWORD =======================
-export const resetPassword = async (req: Request, res: Response) => {
-  try {
-    const { token } = req.params;
-    const { newPassword } = req.body;
-
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: "Password must be at least 6 characters",
-      });
-    }
-
-    const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordTokenExpiresAt: { $gt: Date.now() },
-    });
-
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid or expired reset token",
-      });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordTokenExpiresAt = undefined;
-    await user.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Password reset successfully",
-    });
-  } catch (error) {
-    console.error("Reset password error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -254,8 +156,7 @@ export const checkAuth = async (req: Request, res: Response) => {
       success: true,
       user,
     });
-  } catch (error) {
-    console.error("Check auth error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -279,8 +180,7 @@ export const getProfile = async (req: Request, res: Response) => {
       success: true,
       user,
     });
-  } catch (error) {
-    console.error("Get profile error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -292,7 +192,7 @@ export const getProfile = async (req: Request, res: Response) => {
 export const updateProfile = async (req: Request, res: Response) => {
   try {
     const userId = req.id;
-    const { fullname, email, contact, address, city, country, profilePicture } =
+    const { fullname, email, contact, alternateContact, address, pincode, city, state, country, profilePicture } =
       req.body;
 
     const user = await User.findById(userId);
@@ -329,8 +229,12 @@ export const updateProfile = async (req: Request, res: Response) => {
     if (email !== undefined) updateData.email = email.toLowerCase().trim();
     if (contact !== undefined)
       updateData.contact = contact ? Number(contact) : null;
+    if (alternateContact !== undefined)
+      updateData.alternateContact = alternateContact ? Number(alternateContact) : null;
     if (address !== undefined) updateData.address = address.trim();
+    if (pincode !== undefined) updateData.pincode = pincode.trim();
     if (city !== undefined) updateData.city = city.trim();
+    if (state !== undefined) updateData.state = state.trim();
     if (country !== undefined) updateData.country = country.trim();
 
     if (profilePicture && typeof profilePicture === "string") {
@@ -370,7 +274,6 @@ export const updateProfile = async (req: Request, res: Response) => {
       user: updatedUser,
     });
   } catch (error: any) {
-    console.error("Update profile error:", error);
     if (error.code === 11000 && error.keyPattern?.email) {
       return res.status(409).json({
         success: false,

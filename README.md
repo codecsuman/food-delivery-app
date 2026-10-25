@@ -206,7 +206,7 @@ food-delivery-app/
 ## 🚀 Getting Started
 
 ### Prerequisites
-> `Node.js 18+` · `MongoDB` (local or Atlas) · `Git` · A `Stripe` account (test mode is fine) · An `OpenCage` API key (free tier, 2500 req/day)
+> `Node.js 18+` · `MongoDB` (local replica set or Atlas) · `Git` · A `Stripe` account (test mode is fine) · An `OpenCage` API key (free tier, 2500 req/day)
 
 ### 1️⃣ Clone the repository
 ```bash
@@ -218,8 +218,13 @@ cd food-delivery-app
 ```bash
 cd server
 npm install
+npm run mongo:start   # optional: npm run dev starts it automatically
 npm run dev
 ```
+
+> **Why a replica set?** Checkout and webhook confirmation use MongoDB transactions. A standalone `mongod` cannot run them and returns `Transaction numbers are only allowed on a replica set member or mongos`. On Windows, `npm run dev` and `start-dev.bat` both start the local replica set automatically when `MONGO_URI` points at `127.0.0.1:27018`. With Atlas this step is unnecessary.
+>
+> A standalone database still works through a compensating-write fallback, but Atlas/replica-set transactions are strongly recommended for production. On macOS/Linux, start `mongod --replSet rs0` yourself or use Atlas; `npm run mongo:start` is the Windows helper.
 
 ### 3️⃣ Frontend setup
 ```bash
@@ -256,7 +261,10 @@ FRONTEND_URL=http://localhost:5173
 # =========================
 # DATABASE
 # =========================
-MONGO_URI=mongodb://localhost:27017/suman_food
+# Local: npm run mongo:start (single-node replica set)
+MONGO_URI=mongodb://127.0.0.1:27018/suman_food?replicaSet=rs0
+# Production: use MongoDB Atlas (transactions supported)
+# MONGO_URI=mongodb+srv://USER:PASSWORD@cluster.mongodb.net/suman_food?retryWrites=true&w=majority
 
 # =========================
 # JWT
@@ -313,6 +321,7 @@ VITE_SOCKET_URL=http://localhost:8001
 - Build Command: `npm install && npm run build`
 - Start Command: `npm start`
 - Set every variable from the `.env` template above directly in Render's **Environment** tab — including `NODE_ENV=production` and `FRONTEND_URL` set to your exact Vercel URL (no trailing slash)
+- Use a **MongoDB Atlas** `MONGO_URI` (or another replica set), not a standalone database, so checkout transactions remain atomic
 - Confirm the service is served over `https://` (Render does this by default) — cookies marked `secure: true` are dropped entirely over plain `http://`
 
 <br/>
@@ -373,8 +382,6 @@ Placed → Confirmed → Preparing → On the Way → Delivered
 | POST | `/api/v1/user/logout` | Logout user |
 | GET | `/api/v1/user/check-auth` | Check authentication |
 | PUT | `/api/v1/user/profile/update` | Update profile |
-| POST | `/api/v1/user/forgot-password` | Request password reset |
-| POST | `/api/v1/user/reset-password/:token` | Reset password |
 
 </details>
 
@@ -493,10 +500,26 @@ This is now caught before it reaches Stripe — if you still see it, your cart t
 <details>
 <summary><b>Port already in use (EADDRINUSE)</b></summary>
 
+Stop only the Food App backend (port 8001), without killing the frontend or VS Code:
+
 ```bash
-taskkill /F /IM node.exe
+cd server
+npm run kill
+npm run dev
 ```
-Then restart with `npm run dev`.
+
+`npm run dev` also runs a preflight port check and exits with a clear message if another backend is already listening.
+</details>
+
+<details>
+<summary><b>Checkout fails with “Transaction numbers are only allowed on a replica set member or mongos”</b></summary>
+
+The API is connected to a **standalone** MongoDB. Use one of these:
+
+- **Local:** run `cd server && npm run mongo:start` (starts a user-space replica set on `127.0.0.1:27018`) and set `MONGO_URI=mongodb://127.0.0.1:27018/suman_food?replicaSet=rs0`.
+- **Production:** connect to MongoDB Atlas (or another replica set / `mongos`).
+- `GET /health` reports `transactions.supported` and `transactions.topology` so you can confirm the active topology.
+- A standalone database still uses compensating writes, so checkout no longer fails; transactions are still required for true atomicity.
 </details>
 
 <details>
@@ -510,7 +533,7 @@ All backend imports use `.js` extensions on relative paths (required for NodeNex
 
 1. Confirm MongoDB is installed and running
 2. Check `MONGO_URI` in `.env`
-3. Local: `mongodb://localhost:27017/suman_food`
+3. Local replica set: `npm run mongo:start` then `mongodb://127.0.0.1:27018/suman_food?replicaSet=rs0`
 4. Atlas: `mongodb+srv://user:pass@cluster.mongodb.net/suman_food`
 </details>
 

@@ -4,7 +4,30 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
+    <title>Suman Food — Online Food Delivery</title>
+    <script>
+      // Apply the persisted theme BEFORE React/CSS load to avoid a flash of
+      // light mode for dark-theme users (BUG-001).
+      (function () {
+        try {
+          var root = document.documentElement;
+          var stored = localStorage.getItem("theme-store");
+          var theme = stored ? JSON.parse(stored).state.theme : "light";
+          var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolved = theme === "system" ? (systemDark ? "dark" : "light") : theme;
+          root.classList.remove("light", "dark");
+          root.classList.add(resolved === "dark" ? "dark" : "light");
+          root.style.colorScheme = resolved === "dark" ? "dark" : "light";
+          if (resolved === "dark") {
+            // Match the --background token from index.css so even the very
+            // first paint (before stylesheets load) is dark.
+            root.style.backgroundColor = "hsl(222.2 84% 4.9%)";
+          }
+        } catch (_) {
+          document.documentElement.classList.add("light");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

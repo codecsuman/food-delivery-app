@@ -1,13 +1,17 @@
 {
             "watch": [
                         "*.ts",
-                        "routes/**/*.ts",
-                        "controller/**/*.ts",
-                        "models/**/*.ts",
-                        "middlewares/**/*.ts",
-                        "utils/**/*.ts",
-                        "db/**/*.ts",
-                        "mailtrap/**/*.ts"
+                        "config",
+                        "routes",
+                        "controller",
+                        "models",
+                        "middlewares",
+                        "schemas",
+                        "services",
+                        "socketHandlers",
+                        "utils",
+                        "db",
+                        "mailtrap"
             ],
             "ext": "ts,json",
             "ignore": [

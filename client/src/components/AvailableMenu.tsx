@@ -6,6 +6,7 @@ import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { useNavigate } from "react-router-dom";
 import { Plus, Check, UtensilsCrossed, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { getImageUrl, handleImageError } from "@/lib/placeholder";
 
 const AvailableMenu = ({
   menus,
@@ -125,11 +126,11 @@ const AvailableMenu = ({
           <Card key={menu._id} className="group bg-white dark:bg-gray-800 shadow-sm rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-700 hover:shadow-xl hover:shadow-orange-500/10 transition-all duration-300 hover:-translate-y-1 p-0">
             <div className="relative overflow-hidden">
               <img
-                src={menu.image}
+                src={getImageUrl(menu.image)}
                 alt={menu.name}
                 className="w-full h-48 object-cover transition-transform duration-300 group-hover:scale-105"
                 loading="lazy"
-                onError={(e) => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/400x300?text=No+Image"; }}
+                onError={handleImageError}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               {isInCart(menu._id) && (

@@ -1,8 +1,58 @@
-node_modules
-
+# Environment files - NEVER COMMIT
 .env
-.env.*
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# Server
 server/.env
 server/.env.*
+server/dist
+server/node_modules
+server/logs
+server/*.log
+
+# Client
 client/.env
 client/.env.*
+client/dist
+client/node_modules
+client/build
+client/*.log
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+build
+*.tsbuildinfo
+
+# Test coverage
+coverage
+
+# Temporary files
+*.tmp
+*.temp

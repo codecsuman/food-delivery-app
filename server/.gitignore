@@ -1,0 +1,28 @@
+# Environment files - NEVER COMMIT
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# Build outputs
+dist
+*.tsbuildinfo
+
+# Logs
+logs
+*.log
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# OS
+.DS_Store
+
+# Dependencies
+node_modules
+
+# Test coverage
+coverage

@@ -5,16 +5,25 @@ import AvailableMenu from "./AvailableMenu";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
-import { Timer, MapPin, Globe, Star, UtensilsCrossed, MessageSquare, Send, User } from "lucide-react";
+import { Timer, MapPin, Globe, Star, UtensilsCrossed, MessageSquare, Send, User, RefreshCw, SearchX } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Skeleton } from "./ui/skeleton";
+import { getImageUrl, handleImageError } from "@/lib/placeholder";
+import { isValidObjectId } from "@/lib/validation";
 
 const RestaurantDetail = () => {
   const params = useParams();
-  const { singleRestaurant, getSingleRestaurant, loading } = useRestaurantStore();
-  const { reviews, getReviewsByRestaurant, addReview, loading: reviewLoading } = useReviewStore();
+  const { singleRestaurant: cachedRestaurant, singleRestaurantError, getSingleRestaurant, loading } = useRestaurantStore();
+  const { reviews, reviewsError, getReviewsByRestaurant, addReview, loading: reviewLoading } = useReviewStore();
   const { user } = useUserStore();
+  // The store persists the last viewed restaurant for checkout totals. Only
+  // treat it as current when it matches the id in the URL, otherwise a deep
+  // link could briefly render a different restaurant.
+  const singleRestaurant =
+    cachedRestaurant && cachedRestaurant._id === params.id
+      ? cachedRestaurant
+      : null;
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [hoverRating, setHoverRating] = useState(0);
@@ -27,7 +36,13 @@ const RestaurantDetail = () => {
   }, [params.id, getSingleRestaurant, getReviewsByRestaurant]);
 
   const handleSubmitReview = async () => {
-    if (!rating || !comment.trim() || !params.id) return;
+    if (
+      !rating ||
+      !comment.trim() ||
+      !params.id ||
+      !isValidObjectId(params.id)
+    )
+      return;
     const success = await addReview({
       restaurantId: params.id,
       rating,
@@ -42,14 +57,26 @@ const RestaurantDetail = () => {
     }
   };
 
-  if (loading || !singleRestaurant) {
+  if (loading) {
     return <RestaurantDetailSkeleton />;
+  }
+
+  if (!singleRestaurant) {
+    return (
+      <RestaurantNotFound
+        message={
+          singleRestaurantError ||
+          "We couldn't load this restaurant. The link may be invalid or the restaurant may no longer exist."
+        }
+        onRetry={() => params.id && getSingleRestaurant(params.id)}
+      />
+    );
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900">
       <div className="relative w-full h-56 md:h-80 lg:h-96">
-        <img src={singleRestaurant.imageUrl} alt={singleRestaurant.restaurantName} className="object-cover w-full h-full" />
+        <img src={getImageUrl(singleRestaurant.imageUrl)} onError={handleImageError} alt={singleRestaurant.restaurantName} className="object-cover w-full h-full" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
         <div className="absolute bottom-6 left-4 md:bottom-10 md:left-8 right-4">
           <div className="flex items-center gap-2 mb-2">
@@ -162,7 +189,42 @@ const RestaurantDetail = () => {
             </Button>
           </div>
 
-          {reviews.length === 0 ? (
+          {reviewLoading ? (
+            <div className="space-y-4" aria-busy="true" aria-label="Loading reviews">
+              {[...Array(2)].map((_, index) => (
+                <div
+                  key={index}
+                  className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-4 w-full" />
+                </div>
+              ))}
+            </div>
+          ) : reviewsError ? (
+            <div className="text-center py-12 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700">
+              <p className="font-medium text-gray-700 dark:text-gray-200">
+                Reviews unavailable
+              </p>
+              <p className="text-sm mt-1 mb-4">{reviewsError}</p>
+              {params.id && isValidObjectId(params.id) && (
+                <Button
+                  onClick={() => getReviewsByRestaurant(params.id!)}
+                  variant="outline"
+                  className="rounded-lg"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Try again
+                </Button>
+              )}
+            </div>
+          ) : reviews.length === 0 ? (
             <div className="text-center py-12 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700">
               No reviews yet. Be the first to review!
             </div>
@@ -202,6 +264,44 @@ const RestaurantDetail = () => {
 };
 
 export default RestaurantDetail;
+
+const RestaurantNotFound = ({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) => {
+  return (
+    <div className="min-h-[70vh] flex items-center justify-center px-4 py-16 bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900">
+      <div className="w-full max-w-lg text-center bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-8">
+        <div className="h-16 w-16 mx-auto rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center mb-5">
+          <SearchX className="h-8 w-8 text-orange-500" />
+        </div>
+        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white mb-2">
+          Restaurant unavailable
+        </h1>
+        <p className="text-gray-500 dark:text-gray-400 mb-6">{message}</p>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center justify-center gap-2 w-full sm:w-auto bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold px-5 py-3 rounded-lg shadow-md shadow-orange-500/20 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Try again
+          </button>
+          <Link
+            to="/search"
+            className="inline-flex items-center justify-center w-full sm:w-auto border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 font-semibold px-5 py-3 rounded-lg transition-colors"
+          >
+            Browse restaurants
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const RestaurantDetailSkeleton = () => {
   return (

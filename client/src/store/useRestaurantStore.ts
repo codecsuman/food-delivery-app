@@ -1,5 +1,6 @@
 import { Orders } from "@/types/orderType";
 import { MenuItem, RestaurantState } from "@/types/restaurantType";
+import { isValidObjectId } from "@/lib/validation";
 import axios from "axios";
 import { toast } from "sonner";
 import { create } from "zustand";
@@ -7,6 +8,11 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 const API_END_POINT = `${import.meta.env.VITE_API_BASE_URL}/restaurant`;
 axios.defaults.withCredentials = true;
+
+// Guards against out-of-order responses when the user opens restaurant A and
+// quickly navigates to restaurant B. Only the newest request may update state.
+let singleRestaurantRequestId = 0;
+const inFlightRestaurantRequests = new Map<string, Promise<void>>();
 
 const getErrorMessage = (error: any): string => {
   return (
@@ -25,6 +31,7 @@ export const useRestaurantStore = create<RestaurantState>()(
       searchedRestaurant: null,
       appliedFilter: [],
       singleRestaurant: null,
+      singleRestaurantError: null,
       restaurantOrder: [],
       filterOptions: { cuisines: [], dishes: [] },
 
@@ -238,19 +245,75 @@ export const useRestaurantStore = create<RestaurantState>()(
       },
 
       getSingleRestaurant: async (restaurantId: string) => {
-        try {
-          set({ loading: true });
-          const response = await axios.get(
-            `${API_END_POINT}/${restaurantId}?t=${Date.now()}`,
-          );
-          if (response.data.success) {
-            set({ singleRestaurant: response.data.restaurant });
-          }
-        } catch (error: any) {
-          toast.error(getErrorMessage(error));
-        } finally {
-          set({ loading: false });
+        // A malformed id can never resolve to a restaurant. Reject it locally
+        // instead of sending a request that is guaranteed to return 400.
+        if (!isValidObjectId(restaurantId)) {
+          const message =
+            "This restaurant link is invalid. Please choose a restaurant from the list.";
+          set({
+            loading: false,
+            singleRestaurant: null,
+            singleRestaurantError: message,
+          });
+          toast.error("The requested restaurant ID is invalid.", {
+            id: `restaurant-error-${restaurantId || "missing"}`,
+          });
+          return;
         }
+
+        // React 18 StrictMode runs effects twice in development. Reuse the
+        // in-flight promise so one navigation triggers one network request.
+        const existingRequest = inFlightRestaurantRequests.get(restaurantId);
+        if (existingRequest) return existingRequest;
+
+        const requestId = ++singleRestaurantRequestId;
+
+        const request = (async () => {
+          try {
+            set({
+              loading: true,
+              // Never show a previously viewed restaurant while loading.
+              singleRestaurant: null,
+              singleRestaurantError: null,
+            });
+            const response = await axios.get(
+              `${API_END_POINT}/${restaurantId}?t=${Date.now()}`,
+            );
+
+            if (requestId !== singleRestaurantRequestId) return;
+
+            if (response.data.success && response.data.restaurant) {
+              set({ singleRestaurant: response.data.restaurant });
+            } else {
+              const message = "Restaurant not found.";
+              set({ singleRestaurant: null, singleRestaurantError: message });
+              toast.error(message, { id: `restaurant-error-${restaurantId}` });
+            }
+          } catch (error: any) {
+            // Ignore responses for a restaurant the user already navigated away from.
+            if (requestId !== singleRestaurantRequestId) return;
+
+            const status = error?.response?.status;
+            const message =
+              status === 400
+                ? "The requested restaurant ID is invalid."
+                : status === 404
+                  ? "Restaurant not found."
+                  : getErrorMessage(error);
+
+            set({ singleRestaurant: null, singleRestaurantError: message });
+            toast.error(message, { id: `restaurant-error-${restaurantId}` });
+          } finally {
+            if (requestId === singleRestaurantRequestId) {
+              set({ loading: false });
+            }
+          }
+        })().finally(() => {
+          inFlightRestaurantRequests.delete(restaurantId);
+        });
+
+        inFlightRestaurantRequests.set(restaurantId, request);
+        return request;
       },
 
       getRestaurantOrders: async () => {
@@ -361,6 +424,8 @@ export const useRestaurantStore = create<RestaurantState>()(
       partialize: (state) => ({
         appliedFilter: state.appliedFilter,
         restaurant: state.restaurant,
+        // Kept for checkout totals after a refresh. The detail page verifies
+        // that a persisted restaurant matches the id in the URL before using it.
         singleRestaurant: state.singleRestaurant,
       }),
     },

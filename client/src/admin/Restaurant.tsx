@@ -6,7 +6,7 @@ import {
   restaurantFromSchema,
 } from "@/schema/restaurantSchema";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
-import { ImageIcon, Loader2, Store, Upload, LocateFixed } from "lucide-react";
+import { ImageIcon, Loader2, Store, Upload, LocateFixed, MapPin } from "lucide-react";
 import { FormEvent, useEffect, useState, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -27,7 +27,9 @@ const Restaurant = () => {
   const [input, setInput] = useState<RestaurantFormSchema>({
     restaurantName: "",
     city: "",
+    state: "",
     country: "",
+    pincode: "",
     deliveryTime: 0,
     deliveryPrice: 0,
     cuisines: [],
@@ -64,18 +66,6 @@ const Restaurant = () => {
     }
   };
 
-  // Keeps the marker + form state in sync whenever the pin moves,
-  // whether from a drag, a map click, or "Use My Location".
-  const setPinPosition = (lat: number, lng: number) => {
-    setInput((prev) => ({ ...prev, lat, lng }));
-    setErrors((prev) => ({ ...prev, lat: undefined, lng: undefined }));
-
-    if (map.current && marker.current) {
-      marker.current.setLatLng([lat, lng]);
-      map.current.setView([lat, lng], 15);
-    }
-  };
-
   const useCurrentLocation = () => {
     if (!navigator.geolocation) {
       setErrors((prev) => ({ ...prev, lat: "Geolocation is not supported by this browser" }));
@@ -98,8 +88,73 @@ const Restaurant = () => {
         }));
         setFetchingLocation(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 },
+      // maximumAge: 0 forces a fresh fix instead of a stale cached position.
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
+  };
+
+  // Reverse geocode to auto-fill pincode, city, country from coordinates
+  const reverseGeocode = async (lat: number, lng: number) => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+      const res = await fetch(`${API_BASE_URL}/map/reverse-geocode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ lng, lat }),
+      });
+      const data = await res.json();
+      if (data.success && data.address) {
+        // Prefer structured OpenCage components — splitting the display
+        // address string produced wrong city/country values for many places.
+        const components = data.components || {};
+        const pincodeMatch = data.address.match(/\b\d{6}\b/);
+        const pincode = data.pincode || components.postcode || (pincodeMatch ? pincodeMatch[0] : "");
+        const city =
+          components.city ||
+          components.town ||
+          components.village ||
+          components.municipality ||
+          components.county ||
+          components.state_district ||
+          "";
+        const state = components.state || "";
+        const country = components.country || "";
+
+        setInput((prev) => ({
+          ...prev,
+          pincode: pincode || prev.pincode,
+          city: city || prev.city,
+          state: state || prev.state,
+          country: country || prev.country,
+        }));
+      }
+    } catch {
+      // Reverse geocode failed silently
+    }
+  };
+
+  // Keeps the marker + form state in sync whenever the pin moves,
+  // whether from a drag, a map click, or "Use My Location".
+  const setPinPosition = (
+    lat: number,
+    lng: number,
+    options: { reverseGeocode?: boolean } = {},
+  ) => {
+    setInput((prev) => ({ ...prev, lat, lng }));
+    setErrors((prev) => ({ ...prev, lat: undefined, lng: undefined }));
+
+    if (map.current && marker.current) {
+      marker.current.setLatLng([lat, lng]);
+      map.current.setView([lat, lng], 15);
+    }
+
+    // Only reverse-geocode when the owner actually moves the pin. Doing this
+    // while loading a saved restaurant could overwrite its stored
+    // pincode/city/country with geocoder approximations.
+    if (options.reverseGeocode !== false) {
+      void reverseGeocode(lat, lng);
+    }
   };
 
   // Initialize the map once, with a draggable marker the user can
@@ -151,6 +206,7 @@ const Restaurant = () => {
     formData.append("restaurantName", input.restaurantName);
     formData.append("city", input.city);
     formData.append("country", input.country);
+    formData.append("pincode", input.pincode);
     formData.append("deliveryTime", input.deliveryTime.toString());
     formData.append("deliveryPrice", input.deliveryPrice.toString());
     formData.append("cuisines", JSON.stringify(input.cuisines));
@@ -167,8 +223,8 @@ const Restaurant = () => {
       } else {
         await createRestaurant(formData);
       }
-    } catch (error) {
-      console.error("Restaurant submit error:", error);
+    } catch {
+      // Restaurant submit error - silent
     }
   };
 
@@ -189,7 +245,9 @@ const Restaurant = () => {
         setInput({
           restaurantName: fetchedRestaurant.restaurantName || "",
           city: fetchedRestaurant.city || "",
+          state: (fetchedRestaurant as any).state || "",
           country: fetchedRestaurant.country || "",
+          pincode: (fetchedRestaurant as any).pincode || "",
           deliveryTime: fetchedRestaurant.deliveryTime || 0,
           deliveryPrice: fetchedRestaurant.deliveryPrice || 0,
           cuisines: fetchedRestaurant.cuisines || [],
@@ -202,9 +260,10 @@ const Restaurant = () => {
           setPreviewImage(fetchedRestaurant.imageUrl);
         }
 
-        // Re-center the map + pin once existing coordinates load
+        // Re-center the map + pin once existing coordinates load, without
+        // re-geocoding and overwriting the saved address fields.
         if (hasCoords) {
-          setPinPosition(lat, lng);
+          setPinPosition(lat, lng, { reverseGeocode: false });
         }
       }
     };
@@ -291,6 +350,73 @@ const Restaurant = () => {
                   {errors.country}
                 </span>
               )}
+            </div>
+
+            {/* Pincode */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
+                <MapPin className="w-4 h-4 text-orange-500" />
+                Pincode
+              </Label>
+              <Input
+                type="text"
+                name="pincode"
+                value={input.pincode}
+                onChange={async (e) => {
+                  const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setInput((prev) => ({ ...prev, pincode: value }));
+                  
+                  // Auto-fetch city/state from pincode when 6 digits entered
+                  if (value.length === 6) {
+                    try {
+                      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+                      const res = await fetch(`${API_BASE_URL}/map/pincode/${value}`);
+                      const data = await res.json();
+                      if (data.success) {
+                        setInput((prev) => ({
+                          ...prev,
+                          city: data.city || prev.city,
+                          state: data.state || prev.state,
+                          country: data.country || prev.country,
+                        }));
+                      }
+                    } catch (err) {
+                      console.warn("Pincode lookup failed:", err);
+                    }
+                  }
+                }}
+                placeholder="6-digit pincode (auto-fills city/state)"
+                maxLength={6}
+                className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500"
+              />
+              {errors.pincode && (
+                <span className="text-xs text-red-500 font-medium">
+                  {errors.pincode}
+                </span>
+              )}
+              {/* Use My Location Button for Restaurant */}
+              <div className="space-y-2">
+                <Label className="text-gray-700 dark:text-gray-300 font-medium">Quick Fill Location</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={useCurrentLocation}
+                  disabled={fetchingLocation}
+                  className="w-full h-12 gap-2 justify-start bg-white dark:bg-gray-800 border-orange-200 dark:border-orange-500/30 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10"
+                >
+                  {fetchingLocation ? (
+                    <>
+                      <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                      Detecting location...
+                    </>
+                  ) : (
+                    <>
+                      <LocateFixed className="mr-2 w-4 h-4 text-orange-500" />
+                      Use My Location (Auto-fill City, Pincode, Country)
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
 
             {/* Delivery Time */}

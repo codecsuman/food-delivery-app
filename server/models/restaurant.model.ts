@@ -5,6 +5,7 @@ export interface IRestaurant {
   restaurantName: string;
   city: string;
   country: string;
+  pincode: string; // Added: 6-digit pincode
   deliveryTime: number;
   deliveryPrice: number;
   cuisines: string[];
@@ -50,6 +51,12 @@ const restaurantSchema = new mongoose.Schema<IRestaurantDocument>(
       required: [true, "Country is required"],
       trim: true,
       maxlength: [50, "Country name too long"],
+    },
+    pincode: {
+      type: String,
+      required: [true, "Pincode is required"],
+      trim: true,
+      match: [/^\d{6}$/, "Pincode must be a 6-digit number"],
     },
     deliveryTime: {
       type: Number,

@@ -10,6 +10,7 @@ import { AspectRatio } from "./ui/aspect-ratio";
 import { Skeleton } from "./ui/skeleton";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { Restaurant } from "@/types/restaurantType";
+import { getRestaurantId } from "@/lib/validation";
 
 const SearchPage = () => {
   const params = useParams();
@@ -214,7 +215,12 @@ const SearchPage = () => {
                   onClear={handleClearAllFilters}
                 />
               ) : (
-                restaurants.map((restaurant: Restaurant) => (
+                restaurants.map((restaurant: Restaurant) => {
+                  // Only build a detail link from a real MongoDB ObjectId.
+                  // Invalid/missing ids produced `/restaurant/undefined`, which
+                  // the API rightly answered with 400.
+                  const restaurantId = getRestaurantId(restaurant._id);
+                  return (
                   <Card
                     key={restaurant._id}
                     className="group bg-white dark:bg-gray-800 shadow-sm rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-700 hover:shadow-xl hover:shadow-orange-500/10 transition-all duration-300 hover:-translate-y-1 p-0"
@@ -298,14 +304,25 @@ const SearchPage = () => {
                       <span className="text-xs text-gray-400 dark:text-gray-500">
                         {restaurant.cuisines.length} cuisines
                       </span>
-                      <Link to={`/restaurant/${restaurant._id}`}>
-                        <Button className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold text-sm h-9 px-4 rounded-full shadow-sm shadow-orange-500/20 transition-all">
-                          View Menu
+                      {restaurantId ? (
+                        <Link to={`/restaurant/${restaurantId}`}>
+                          <Button className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold text-sm h-9 px-4 rounded-full shadow-sm shadow-orange-500/20 transition-all">
+                            View Menu
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Button
+                          disabled
+                          title="This restaurant is missing a valid id"
+                          className="bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-semibold text-sm h-9 px-4 rounded-full"
+                        >
+                          Unavailable
                         </Button>
-                      </Link>
+                      )}
                     </CardFooter>
                   </Card>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

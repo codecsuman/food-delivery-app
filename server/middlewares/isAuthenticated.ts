@@ -27,7 +27,7 @@ export const isAuthenticated = async (
     }
 
     if (!process.env.SECRET_KEY) {
-      console.error("❌ SECRET_KEY is not defined in environment variables");
+      // SECRET_KEY not configured
       return res.status(500).json({
         success: false,
         message: "Server configuration error",
@@ -64,8 +64,7 @@ export const isAuthenticated = async (
     req.email = (decoded.email as string) || "";
 
     next();
-  } catch (error) {
-    console.error("❌ Authentication error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Internal server error",

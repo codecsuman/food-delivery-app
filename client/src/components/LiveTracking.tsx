@@ -16,16 +16,67 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || "";
+
+// FIX: never fall back to localhost in a production build. When only
+// VITE_API_BASE_URL is configured (the common Vercel/Render setup), derive the
+// Socket.IO origin from it. Falling back to `window.location.origin` keeps
+// same-origin deployments working too.
+const SOCKET_URL: string = (() => {
+  const configured = import.meta.env.VITE_SOCKET_URL as string | undefined;
+  if (configured) return configured;
+  if (API_BASE_URL) {
+    try {
+      return new URL(API_BASE_URL, window.location.origin).origin;
+    } catch {
+      // ignore malformed URL and use the page origin below
+    }
+  }
+  return window.location.origin;
+})();
+
+const isValidCoords = (coords?: readonly number[] | null): coords is [number, number] => {
+  if (!coords || coords.length < 2) return false;
+  const [lng, lat] = coords;
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
+  if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return false;
+  if (lng === 0 && lat === 0) return false;
+  return true;
+};
+
+const RESTAURANT_ICON = L.divIcon({
+  className: "custom-marker",
+  html: '<div style="width:40px;height:40px;background:linear-gradient(135deg,#f97316,#f59e0b);border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(249,115,22,0.4);border:3px solid white;"><span style="transform:rotate(45deg);font-size:16px;">🏪</span></div>',
+  iconSize: [40, 40],
+  iconAnchor: [20, 40],
+});
+
+const CUSTOMER_ICON = L.divIcon({
+  className: "custom-marker",
+  html: '<div style="width:40px;height:40px;background:linear-gradient(135deg,#22c55e,#16a34a);border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(34,197,94,0.4);border:3px solid white;"><span style="transform:rotate(45deg);font-size:16px;">🏠</span></div>',
+  iconSize: [40, 40],
+  iconAnchor: [20, 40],
+});
+
+const DRIVER_ICON = L.divIcon({
+  className: "custom-marker",
+  html: '<div style="width:44px;height:44px;background:linear-gradient(135deg,#ef4444,#dc2626);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(239,68,68,0.5);border:3px solid white;animation:pulse 2s infinite;"><span style="font-size:18px;">🛵</span></div>',
+  iconSize: [44, 44],
+  iconAnchor: [22, 22],
+});
+
 interface LiveTrackingProps {
   orderId: string;
-  restaurantCoords: [number, number];
+  restaurantCoords?: [number, number] | null;
   customerCoords: [number, number];
+  /** Last known driver position, passed by the tracking page after a refresh. */
   initialDriverCoords?: [number, number];
+  /** Actual order status, so the UI doesn't default to "preparing". */
+  initialStatus?: string;
+  initialEta?: number | null;
+  initialDistanceRemaining?: number | null;
+  initialLocationAt?: string | Date | null;
 }
-
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:8001";
-// FIX: full backend URL instead of relative path — required for Vercel deploys
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
 
 const STATUS_CONFIG: Record<string, {
   label: string;
@@ -89,121 +140,73 @@ const STATUS_FLOW = ["pending", "confirmed", "preparing", "outfordelivery", "del
 
 const LiveTracking = ({
   orderId,
-  restaurantCoords,
+  restaurantCoords = null,
   customerCoords,
-  initialDriverCoords = restaurantCoords,
+  initialDriverCoords,
+  initialStatus = "preparing",
+  initialEta = null,
+  initialDistanceRemaining = null,
+  initialLocationAt = null,
 }: LiveTrackingProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
+  const restaurantMarker = useRef<L.Marker | null>(null);
+  const customerMarker = useRef<L.Marker | null>(null);
   const driverMarker = useRef<L.Marker | null>(null);
   const routeLine = useRef<L.Polyline | null>(null);
   const socket = useRef<Socket | null>(null);
 
-  const [, setDriverLocation] = useState<[number, number]>(initialDriverCoords);
-  const [eta, setEta] = useState<number | null>(null);
-  const [distanceRemaining, setDistanceRemaining] = useState<number | null>(null);
-  const [status, setStatus] = useState("preparing");
+  // Refs keep socket callbacks and route requests on the *current* coordinates
+  // instead of the values captured when the map was first created.
+  const customerCoordsRef = useRef<[number, number]>(customerCoords);
+  const driverCoordsRef = useRef<[number, number] | null>(
+    isValidCoords(initialDriverCoords) ? initialDriverCoords : null,
+  );
+  const receivedLiveDriverRef = useRef(false);
+  const routeRequestId = useRef(0);
+  const hasFitRoute = useRef(false);
+  // Server timestamp of the newest position applied to the map. Prevents an
+  // older polled response from moving the driver backwards after a socket
+  // event (or after a reconnect).
+  const initialLocationDate = initialLocationAt ? new Date(initialLocationAt) : null;
+  const initialLocationTime =
+    initialLocationDate && !Number.isNaN(initialLocationDate.getTime())
+      ? initialLocationDate.getTime()
+      : 0;
+  const lastAppliedAtRef = useRef<number>(initialLocationTime);
+
+  const [driverPosition, setDriverPosition] = useState<[number, number] | null>(
+    isValidCoords(initialDriverCoords) ? initialDriverCoords : null,
+  );
+  const [eta, setEta] = useState<number | null>(initialEta);
+  const [distanceRemaining, setDistanceRemaining] = useState<number | null>(initialDistanceRemaining);
+  const [status, setStatus] = useState(initialStatus);
   const [isConnected, setIsConnected] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(() => {
+    if (!initialLocationAt) return null;
+    const parsed = new Date(initialLocationAt);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  });
 
-  useEffect(() => {
-    if (!mapContainer.current) return;
+  customerCoordsRef.current = customerCoords;
 
-    map.current = L.map(mapContainer.current, {
-      zoomControl: false,
-    }).setView([customerCoords[1], customerCoords[0]], 13);
+  const fitToDriverAndCustomer = (driverCoords: [number, number]) => {
+    if (!map.current || hasFitRoute.current) return;
+    if (!isValidCoords(customerCoordsRef.current)) return;
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 19,
-    }).addTo(map.current);
-
-    L.control.zoom({ position: "bottomright" }).addTo(map.current);
-
-    const restaurantIcon = L.divIcon({
-      className: "custom-marker",
-      html: '<div style="width:40px;height:40px;background:linear-gradient(135deg,#f97316,#f59e0b);border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(249,115,22,0.4);border:3px solid white;"><span style="transform:rotate(45deg);font-size:16px;">🏪</span></div>',
-      iconSize: [40, 40],
-      iconAnchor: [20, 40],
-    });
-
-    L.marker([restaurantCoords[1], restaurantCoords[0]], { icon: restaurantIcon })
-      .addTo(map.current)
-      .bindPopup("<b>Restaurant</b><br>Your food is being prepared here");
-
-    const customerIcon = L.divIcon({
-      className: "custom-marker",
-      html: '<div style="width:40px;height:40px;background:linear-gradient(135deg,#22c55e,#16a34a);border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(34,197,94,0.4);border:3px solid white;"><span style="transform:rotate(45deg);font-size:16px;">🏠</span></div>',
-      iconSize: [40, 40],
-      iconAnchor: [20, 40],
-    });
-
-    L.marker([customerCoords[1], customerCoords[0]], { icon: customerIcon })
-      .addTo(map.current)
-      .bindPopup("<b>Your Location</b><br>Delivery address");
-
-    const driverIcon = L.divIcon({
-      className: "custom-marker",
-      html: '<div style="width:44px;height:44px;background:linear-gradient(135deg,#ef4444,#dc2626);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(239,68,68,0.5);border:3px solid white;animation:pulse 2s infinite;"><span style="font-size:18px;">🛵</span></div>',
-      iconSize: [44, 44],
-      iconAnchor: [22, 22],
-    });
-
-    driverMarker.current = L.marker([initialDriverCoords[1], initialDriverCoords[0]], {
-      icon: driverIcon,
-    }).addTo(map.current).bindPopup("<b>Driver</b><br>On the way!");
-
-    drawRoute(initialDriverCoords, customerCoords);
-
-    socket.current = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
-      withCredentials: true,
-    });
-
-    socket.current.on("connect", () => {
-      setIsConnected(true);
-      socket.current?.emit("customer:join", { orderId });
-    });
-
-    socket.current.on("disconnect", () => {
-      setIsConnected(false);
-    });
-
-    socket.current.on("location:update", (data: any) => {
-      const newLoc: [number, number] = [data.location.lng, data.location.lat];
-      setDriverLocation(newLoc);
-      setEta(data.eta);
-      setDistanceRemaining(data.distanceRemaining);
-      setStatus(data.status);
-
-      if (driverMarker.current && map.current) {
-        driverMarker.current.setLatLng([data.location.lat, data.location.lng]);
-        drawRoute(newLoc, customerCoords);
-      }
-    });
-
-    socket.current.on("connect_error", (err) => {
-      console.error("Socket connection error:", err.message);
-      setIsConnected(false);
-    });
-
-    // FIX: surface auth/authorization errors emitted from the backend
-    // (e.g. "Not authorized for this order") instead of failing silently.
-    socket.current.on("error", (err: any) => {
-      console.error("Socket error:", err?.message || err);
-    });
-
-    return () => {
-      socket.current?.disconnect();
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
-      }
-    };
-  }, []);
+    const bounds = L.latLngBounds(
+      [customerCoordsRef.current[1], customerCoordsRef.current[0]],
+      [driverCoords[1], driverCoords[0]],
+    );
+    map.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
+    hasFitRoute.current = true;
+  };
 
   const drawRoute = async (from: [number, number], to: [number, number]) => {
+    if (!isValidCoords(from) || !isValidCoords(to)) return;
+    const requestId = ++routeRequestId.current;
+
     try {
-      // FIX: relative path → full backend URL
       const res = await fetch(`${API_BASE_URL}/map/tracking/route`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -215,31 +218,307 @@ const LiveTracking = ({
       });
       const data = await res.json();
 
-      if (data.success && map.current) {
-        if (routeLine.current) map.current.removeLayer(routeLine.current);
+      // Ignore responses from an older position (fast GPS updates can make
+      // requests resolve out of order).
+      if (requestId !== routeRequestId.current) return;
+      if (!data.success || !map.current) return;
 
-        const latLngs = data.routeCoordinates.map((coord: [number, number]) => [coord[1], coord[0]]);
-        routeLine.current = L.polyline(latLngs as L.LatLngExpression[], {
-          color: "#f97316",
-          weight: 5,
-          opacity: 0.85,
-          dashArray: "12, 8",
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(map.current);
+      if (routeLine.current) map.current.removeLayer(routeLine.current);
 
-        map.current.fitBounds(routeLine.current.getBounds(), {
-          padding: [60, 60],
-          maxZoom: 16,
-        });
-      }
-    } catch (err) {
-      console.error("Route error:", err);
+      const latLngs = (data.routeCoordinates || []).map(
+        (coord: [number, number]) => [coord[1], coord[0]] as [number, number],
+      );
+      if (latLngs.length < 2) return;
+
+      routeLine.current = L.polyline(latLngs as L.LatLngExpression[], {
+        color: "#f97316",
+        weight: 5,
+        opacity: 0.85,
+        dashArray: "12, 8",
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(map.current);
+    } catch {
+      // Route error - silent; the marker still updates.
     }
   };
 
+  const applyDriverLocation = (
+    coords: [number, number],
+    options: { live?: boolean; at?: string | Date | null; fromParent?: boolean } = {},
+  ) => {
+    if (!isValidCoords(coords)) return;
+
+    const parsedAt = options.at ? new Date(options.at) : null;
+    const incomingAt =
+      parsedAt && !Number.isNaN(parsedAt.getTime()) ? parsedAt.getTime() : 0;
+
+    // A polled response may resolve after a newer socket event. Ignore it
+    // unless it is genuinely newer (or has no timestamp at all).
+    if (
+      options.fromParent &&
+      incomingAt > 0 &&
+      lastAppliedAtRef.current > 0 &&
+      incomingAt <= lastAppliedAtRef.current
+    ) {
+      return;
+    }
+
+    if (options.live) receivedLiveDriverRef.current = true;
+    if (incomingAt > lastAppliedAtRef.current) {
+      lastAppliedAtRef.current = incomingAt;
+    }
+
+    driverCoordsRef.current = [coords[0], coords[1]];
+    setDriverPosition([coords[0], coords[1]]);
+    if (options.live) {
+      setLastUpdated(parsedAt && !Number.isNaN(parsedAt.getTime()) ? parsedAt : new Date());
+    }
+
+    if (map.current) {
+      const latLng: L.LatLngExpression = [coords[1], coords[0]];
+      if (driverMarker.current) {
+        driverMarker.current.setLatLng(latLng);
+      } else {
+        driverMarker.current = L.marker(latLng, { icon: DRIVER_ICON })
+          .addTo(map.current)
+          .bindPopup("<b>Driver</b><br>Live location");
+      }
+    }
+
+    // Fit once when the driver first appears. This also works when the route
+    // service is unavailable, so the driver's marker can never be off-screen.
+    fitToDriverAndCustomer([coords[0], coords[1]]);
+
+    void drawRoute([coords[0], coords[1]], customerCoordsRef.current);
+  };
+
+  // ======================= MAP SETUP (once) =======================
+  useEffect(() => {
+    if (!mapContainer.current || map.current) return;
+
+    const instance = L.map(mapContainer.current, {
+      zoomControl: false,
+    }).setView([customerCoords[1], customerCoords[0]], 13);
+
+    map.current = instance;
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(instance);
+
+    L.control.zoom({ position: "bottomright" }).addTo(instance);
+
+    if (isValidCoords(restaurantCoords)) {
+      restaurantMarker.current = L.marker([restaurantCoords[1], restaurantCoords[0]], {
+        icon: RESTAURANT_ICON,
+      })
+        .addTo(instance)
+        .bindPopup("<b>Restaurant</b><br>Your food was prepared here");
+    }
+
+    customerMarker.current = L.marker([customerCoords[1], customerCoords[0]], {
+      icon: CUSTOMER_ICON,
+    })
+      .addTo(instance)
+      .bindPopup("<b>Your Location</b><br>Delivery address");
+
+    // Before the driver starts sharing GPS, show the restaurant → customer
+    // pair so the map isn't stuck on a single point (or a stale city).
+    if (isValidCoords(restaurantCoords) && !driverCoordsRef.current) {
+      const initialBounds = L.latLngBounds(
+        [customerCoords[1], customerCoords[0]],
+        [restaurantCoords[1], restaurantCoords[0]],
+      );
+      instance.fitBounds(initialBounds, { padding: [60, 60], maxZoom: 16 });
+    }
+
+    if (driverCoordsRef.current) {
+      const driverCoords = driverCoordsRef.current;
+      driverMarker.current = L.marker([driverCoords[1], driverCoords[0]], {
+        icon: DRIVER_ICON,
+      })
+        .addTo(instance)
+        .bindPopup("<b>Driver</b><br>Live location");
+      fitToDriverAndCustomer(driverCoords);
+      void drawRoute(driverCoords, customerCoordsRef.current);
+    }
+
+    return () => {
+      instance.remove();
+      map.current = null;
+      restaurantMarker.current = null;
+      customerMarker.current = null;
+      driverMarker.current = null;
+      routeLine.current = null;
+      hasFitRoute.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep the restaurant marker in sync when the order is refreshed and the
+  // restaurant's saved location has changed.
+  useEffect(() => {
+    if (!map.current) return;
+
+    if (!isValidCoords(restaurantCoords)) {
+      if (restaurantMarker.current) {
+        map.current.removeLayer(restaurantMarker.current);
+        restaurantMarker.current = null;
+      }
+      return;
+    }
+
+    const latLng: L.LatLngExpression = [restaurantCoords[1], restaurantCoords[0]];
+    if (restaurantMarker.current) {
+      restaurantMarker.current.setLatLng(latLng);
+    } else {
+      restaurantMarker.current = L.marker(latLng, { icon: RESTAURANT_ICON })
+        .addTo(map.current)
+        .bindPopup("<b>Restaurant</b><br>Your food was prepared here");
+    }
+  }, [restaurantCoords?.[0], restaurantCoords?.[1]]);
+
+  // Keep the customer marker + route origin in sync when a refreshed order
+  // supplies updated delivery coordinates.
+  useEffect(() => {
+    customerCoordsRef.current = customerCoords;
+    if (!map.current) return;
+
+    const latLng: L.LatLngExpression = [customerCoords[1], customerCoords[0]];
+    if (customerMarker.current) {
+      customerMarker.current.setLatLng(latLng);
+    } else {
+      customerMarker.current = L.marker(latLng, { icon: CUSTOMER_ICON })
+        .addTo(map.current)
+        .bindPopup("<b>Your Location</b><br>Delivery address");
+    }
+
+    if (driverCoordsRef.current) {
+      void drawRoute(driverCoordsRef.current, customerCoords);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerCoords[0], customerCoords[1]]);
+
+  // Apply the last known driver position passed by the page (after a refresh
+  // or from the polling fallback). Newer live socket events always win.
+  useEffect(() => {
+    if (!isValidCoords(initialDriverCoords)) return;
+    if (
+      driverCoordsRef.current &&
+      driverCoordsRef.current[0] === initialDriverCoords[0] &&
+      driverCoordsRef.current[1] === initialDriverCoords[1]
+    ) {
+      return;
+    }
+    applyDriverLocation(initialDriverCoords, {
+      fromParent: true,
+      at: initialLocationAt,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDriverCoords?.[0], initialDriverCoords?.[1], initialLocationAt]);
+
+  // Keep the status/ETA in sync when the parent polls a fresher order.
+  useEffect(() => {
+    setStatus(initialStatus || "preparing");
+  }, [initialStatus]);
+
+  useEffect(() => {
+    // While the socket is connected it pushes ETAs more frequently than the
+    // 10s poll; once it disconnects, let the polled order take over again.
+    if (isConnected && receivedLiveDriverRef.current) return;
+    if (initialEta != null) setEta(initialEta);
+  }, [initialEta, isConnected]);
+
+  useEffect(() => {
+    if (isConnected && receivedLiveDriverRef.current) return;
+    if (initialDistanceRemaining != null) setDistanceRemaining(initialDistanceRemaining);
+  }, [initialDistanceRemaining, isConnected]);
+
+  useEffect(() => {
+    if (!initialLocationAt) return;
+    const parsed = new Date(initialLocationAt);
+    if (Number.isNaN(parsed.getTime())) return;
+    // Never move the "last updated" label backwards because of an older poll.
+    setLastUpdated((prev) => (!prev || parsed.getTime() > prev.getTime() ? parsed : prev));
+  }, [initialLocationAt]);
+
+  // ======================= SOCKET.IO =======================
+  useEffect(() => {
+    if (!orderId) return;
+
+    // Default transport order (polling first, then upgrade). Forcing
+    // `websocket` first can close the socket mid-handshake in React StrictMode.
+    // `autoConnect: false` + a deferred connect avoids opening a socket on the
+    // throw-away first mount that StrictMode immediately disconnects. That
+    // disconnect is what produced "WebSocket is closed before the connection
+    // is established" in the browser console.
+    const activeSocket = io(SOCKET_URL, {
+      withCredentials: true,
+      autoConnect: false,
+    });
+    socket.current = activeSocket;
+
+    const handleSnapshot = (data: any) => {
+      if (data?.location) {
+        applyDriverLocation(
+          [data.location.lng, data.location.lat],
+          { live: true, at: data.timestamp || null },
+        );
+      }
+      if (data?.status) setStatus(data.status);
+      if (data?.eta != null) setEta(data.eta);
+      if (data?.distanceRemaining != null) setDistanceRemaining(data.distanceRemaining);
+      if (data?.timestamp) {
+        const parsed = new Date(data.timestamp);
+        if (!Number.isNaN(parsed.getTime())) {
+          setLastUpdated((prev) => (!prev || parsed.getTime() > prev.getTime() ? parsed : prev));
+        }
+      }
+    };
+
+    activeSocket.on("connect", () => {
+      setIsConnected(true);
+      activeSocket.emit("customer:join", { orderId });
+    });
+
+    activeSocket.on("disconnect", () => {
+      setIsConnected(false);
+    });
+
+    // Sent immediately by the server when the customer joins the room.
+    activeSocket.on("tracking:snapshot", handleSnapshot);
+    activeSocket.on("location:update", handleSnapshot);
+
+    activeSocket.on("connect_error", () => {
+      setIsConnected(false);
+    });
+
+    activeSocket.on("error", () => {
+      // Socket error - the polling fallback in LiveTrackingPage keeps status fresh.
+    });
+
+    const connectTimer = setTimeout(() => {
+      if (socket.current === activeSocket) activeSocket.connect();
+    }, 0);
+
+    return () => {
+      clearTimeout(connectTimer);
+      activeSocket.removeAllListeners();
+      activeSocket.disconnect();
+      if (socket.current === activeSocket) {
+        socket.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
+
   const currentStatus = STATUS_CONFIG[status] || STATUS_CONFIG.preparing;
   const currentStepIndex = STATUS_FLOW.indexOf(status);
+  const updatedLabel = lastUpdated
+    ? lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 via-white to-gray-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 overflow-y-auto">
@@ -346,6 +625,13 @@ const LiveTracking = ({
             </div>
           </div>
           <div ref={mapContainer} className="h-80 w-full" style={{ minHeight: "320px" }} />
+          {!driverPosition && (
+            <div className="px-4 py-2.5 bg-amber-50 dark:bg-amber-500/10 border-t border-amber-100 dark:border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
+              {status === "outfordelivery"
+                ? "Waiting for the delivery partner's GPS signal…"
+                : "The driver's live position will appear here once the order is out for delivery."}
+            </div>
+          )}
           <div className="p-3 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700 flex items-center justify-center gap-6 text-xs text-gray-500 dark:text-gray-400">
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded-full bg-gradient-to-br from-orange-500 to-amber-500" />
@@ -377,6 +663,12 @@ const LiveTracking = ({
               <span className="text-gray-500 dark:text-gray-400">Status</span>
               <span className={`font-medium capitalize ${currentStatus.color}`}>
                 {status.replace(/([A-Z])/g, " $1").trim()}
+              </span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+              <span className="text-gray-500 dark:text-gray-400">Last location update</span>
+              <span className="font-medium text-gray-900 dark:text-white">
+                {updatedLabel || "Waiting for driver GPS"}
               </span>
             </div>
             <div className="flex justify-between py-2">

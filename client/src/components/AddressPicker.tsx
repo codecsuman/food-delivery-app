@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Loader2, MapPin, Check } from "lucide-react";
+import { Loader2, MapPin, Check, LocateFixed } from "lucide-react";
 
 // Fix Leaflet default marker icon
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -20,111 +20,394 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 // FIX: use the full backend URL instead of a relative path, so this works on
 // Vercel (which has no dev-server proxy) as well as locally.
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || "";
+const DEFAULT_CENTER: [number, number] = [22.5726, 88.3639]; // [lat, lng]
+
+const isValidCoords = (coords?: readonly number[] | null): coords is [number, number] => {
+  if (!coords || coords.length < 2) return false;
+  const [lng, lat] = coords;
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
+  if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return false;
+  return !(lng === 0 && lat === 0);
+};
 
 interface AddressPickerProps {
   onAddressSelect: (data: {
     address: string;
     pincode: string;
-    coordinates: [number, number];
+    coordinates: [number, number]; // [lng, lat]
     formattedAddress: string;
+    city?: string;
+    state?: string;
+    country?: string;
   }) => void;
   initialAddress?: string;
   initialPincode?: string;
+  /** Previously selected/saved position, [lng, lat]. */
+  initialCoordinates?: [number, number];
 }
 
-const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = "" }: AddressPickerProps) => {
+const AddressPicker = ({
+  onAddressSelect,
+  initialAddress = "",
+  initialPincode = "",
+  initialCoordinates,
+}: AddressPickerProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const marker = useRef<L.Marker | null>(null);
+  const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialLookupAttempted = useRef(false);
+  // Only the newest async lookup may update the form. Without these guards an
+  // older reverse-geocode/pincode/autocomplete response could overwrite a
+  // newer pin or typed value with stale data.
+  const reverseRequestId = useRef(0);
+  const pincodeRequestId = useRef(0);
+  const autocompleteRequestId = useRef(0);
+  const initialLookupRequestId = useRef(0);
 
   const [address, setAddress] = useState(initialAddress);
   const [pincode, setPincode] = useState(initialPincode);
-  const [, setCoordinates] = useState<[number, number] | null>(null);
+  // [lng, lat] — the exact pin the customer chose. This is what gets sent to
+  // the server; it is no longer discarded in favour of a text geocode.
+  const [coordinates, setCoordinates] = useState<[number, number] | null>(
+    isValidCoords(initialCoordinates) ? initialCoordinates : null,
+  );
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [validated, setValidated] = useState(false);
+  const [pincodeLoading, setPincodeLoading] = useState(false);
+  const [pincodeData, setPincodeData] = useState<{
+    city?: string;
+    district?: string;
+    state?: string;
+    country?: string;
+    postOffices?: any[];
+  } | null>(null);
+
+  // BUG FIX: the parent can pass a profile address/pincode after this
+  // component mounts, but the state was only initialized once. Sync the
+  // initial values without overwriting anything the user already typed.
+  useEffect(() => {
+    if (initialAddress) {
+      setAddress((current) => current || initialAddress);
+    }
+    if (initialPincode) {
+      setPincode((current) => current || initialPincode);
+    }
+  }, [initialAddress, initialPincode]);
+
+  const extractPincode = (addr: string) => {
+    const match = addr.match(/\b\d{6}\b/);
+    return match ? match[0] : "";
+  };
+
+  const applyReverseGeocode = (data: any) => {
+    if (!data?.success) return;
+
+    if (data.address) {
+      setAddress(data.address);
+    }
+
+    const components = data.components || {};
+    const foundPincode =
+      data.pincode ||
+      components.postcode ||
+      (data.address ? extractPincode(data.address) : "");
+    if (foundPincode) setPincode(foundPincode);
+
+    // The map position is now the source of truth. Drop any city/state box
+    // that was filled from a previously typed pincode so it cannot display
+    // stale information for the new pin.
+    setPincodeData(null);
+    setValidated(false);
+    setError("");
+  };
+
+  const reverseGeocodeAt = async (lat: number, lng: number) => {
+    const requestId = ++reverseRequestId.current;
+    try {
+      const res = await fetch(`${API_BASE_URL}/map/reverse-geocode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ lng, lat }),
+      });
+      const data = await res.json();
+      if (requestId === reverseRequestId.current) applyReverseGeocode(data);
+    } catch {
+      // Reverse geocode error - the pin is still usable, the customer can type
+      // the address manually.
+    }
+  };
+
+  const placeMarker = (
+    coords: [number, number], // [lat, lng] (Leaflet order)
+    options: { recenter?: boolean } = {},
+  ) => {
+    if (!map.current) return;
+
+    if (marker.current) {
+      marker.current.setLatLng(coords);
+    } else {
+      marker.current = L.marker(coords, { draggable: true }).addTo(map.current);
+      marker.current.on("dragend", () => {
+        if (!marker.current) return;
+        const position = marker.current.getLatLng();
+        setCoordinates([position.lng, position.lat]);
+        setValidated(false);
+        void reverseGeocodeAt(position.lat, position.lng);
+      });
+    }
+
+    setCoordinates([coords[1], coords[0]]);
+    if (options.recenter !== false) {
+      map.current.setView(coords, 15);
+    }
+  };
+
+  const handleMapPick = (lat: number, lng: number) => {
+    initialLookupRequestId.current += 1;
+    pincodeRequestId.current += 1;
+    setPincodeLoading(false);
+    placeMarker([lat, lng]);
+    setValidated(false);
+    void reverseGeocodeAt(lat, lng);
+  };
 
   // Initialize OpenStreetMap
   useEffect(() => {
     if (map.current || !mapContainer.current) return;
 
-    map.current = L.map(mapContainer.current).setView([22.5726, 88.3639], 13);
+    const startLat = isValidCoords(initialCoordinates) ? initialCoordinates[1] : DEFAULT_CENTER[0];
+    const startLng = isValidCoords(initialCoordinates) ? initialCoordinates[0] : DEFAULT_CENTER[1];
+    const instance = L.map(mapContainer.current).setView(
+      [startLat, startLng],
+      isValidCoords(initialCoordinates) ? 15 : 12,
+    );
+    map.current = instance;
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,
-    }).addTo(map.current);
+    }).addTo(instance);
 
     // Click on map to set location
-    map.current.on("click", async (e: L.LeafletMouseEvent) => {
-      const { lat, lng } = e.latlng;
-      setCoordinates([lng, lat]);
-      placeMarker([lat, lng]);
+    instance.on("click", (e: L.LeafletMouseEvent) => {
+      handleMapPick(e.latlng.lat, e.latlng.lng);
+    });
 
-      // Reverse geocode
+    // BUG FIX: the Leaflet instance was never destroyed. On route changes this
+    // leaked the map, tile handlers and DOM listeners ("Map container is
+    // already initialized" errors on remount / React StrictMode).
+    return () => {
+      if (autocompleteTimer.current) {
+        clearTimeout(autocompleteTimer.current);
+        autocompleteTimer.current = null;
+      }
+      instance.remove();
+      map.current = null;
+      marker.current = null;
+      // React StrictMode mounts, cleans up, then mounts again. Allow the
+      // initial address lookup to run for the recreated map (the first
+      // request is cancelled by its own effect cleanup).
+      initialLookupAttempted.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Show the previously chosen pin immediately when opening the picker again.
+  useEffect(() => {
+    if (!map.current || !isValidCoords(initialCoordinates)) return;
+    placeMarker([initialCoordinates[1], initialCoordinates[0]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCoordinates?.[0], initialCoordinates?.[1]]);
+
+  // When no pin was saved yet, geocode the saved address once so the map opens
+  // at the customer's actual location instead of the hard-coded fallback.
+  useEffect(() => {
+    if (initialLookupAttempted.current) return;
+    if (isValidCoords(initialCoordinates)) {
+      initialLookupAttempted.current = true;
+      return;
+    }
+    if (!map.current || !initialAddress || initialPincode.length !== 6) return;
+
+    initialLookupAttempted.current = true;
+    let active = true;
+    const requestId = ++initialLookupRequestId.current;
+
+    (async () => {
       try {
-        // FIX: relative path → full backend URL
-        const res = await fetch(`${API_BASE_URL}/map/reverse-geocode`, {
+        const res = await fetch(`${API_BASE_URL}/map/validate-address`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ lng, lat }),
+          body: JSON.stringify({ address: initialAddress, pincode: initialPincode }),
         });
         const data = await res.json();
-        if (data.success) {
-          setAddress(data.address);
-          extractPincode(data.address);
-          setValidated(false);
+        if (
+          !active ||
+          requestId !== initialLookupRequestId.current ||
+          !data.success ||
+          !isValidCoords(data.coordinates)
+        ) {
+          return;
+        }
+
+        placeMarker([data.coordinates[1], data.coordinates[0]]);
+        setPincodeData({
+          city: data.city,
+          district: data.district,
+          state: data.state,
+          country: data.country,
+          postOffices: data.postOffices,
+        });
+      } catch {
+        // The customer can still click/drag the pin manually.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAddress, initialPincode, initialCoordinates?.[0], initialCoordinates?.[1]]);
+
+  // Auto-fill city, district, state when pincode is entered (6 digits)
+  const handlePincodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const requestId = ++pincodeRequestId.current;
+    // A manual pincode edit invalidates a pending map reverse-geocode response
+    // and the one-time initial address lookup.
+    reverseRequestId.current += 1;
+    initialLookupRequestId.current += 1;
+    const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+    setPincode(value);
+    setValidated(false);
+    setPincodeData(null);
+
+    if (value.length === 6) {
+      setPincodeLoading(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/map/pincode/${value}`);
+        const data = await res.json();
+        if (requestId === pincodeRequestId.current && data.success) {
+          setPincodeData({
+            city: data.city,
+            district: data.district,
+            state: data.state,
+            country: data.country,
+            postOffices: data.postOffices,
+          });
         }
       } catch (err) {
-        console.error(err);
+        console.warn("Pincode lookup failed:", err);
       }
-    });
-  }, []);
-
-  const placeMarker = (coords: [number, number]) => {
-    if (!map.current) return;
-    if (marker.current) map.current.removeLayer(marker.current);
-    marker.current = L.marker(coords).addTo(map.current);
-    map.current.setView(coords, 15);
-  };
-
-  const extractPincode = (addr: string) => {
-    const match = addr.match(/\b\d{6}\b/);
-    if (match) setPincode(match[0]);
-  };
-
-  // Address autocomplete using OpenCage
-  const handleAddressChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setAddress(value);
-    setValidated(false);
-
-    if (value.length > 3) {
-      try {
-        const res = await fetch(
-          `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(value + ", India")}&key=${import.meta.env.VITE_OPENCAGE_KEY}&limit=5&countrycode=in`
-        );
-        const data = await res.json();
-        setSuggestions(data.results || []);
-      } catch (err) {
-        setSuggestions([]);
-      }
+      if (requestId === pincodeRequestId.current) setPincodeLoading(false);
     } else {
-      setSuggestions([]);
+      setPincodeLoading(false);
     }
   };
 
+  // Use device GPS to fetch current location
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by this browser");
+      return;
+    }
+
+    initialLookupRequestId.current += 1;
+    pincodeRequestId.current += 1;
+    setPincodeLoading(false);
+    setLocating(true);
+    setError("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+
+        // Place the pin immediately with the device's exact GPS position.
+        placeMarker([latitude, longitude]);
+        setValidated(false);
+        await reverseGeocodeAt(latitude, longitude);
+        setLocating(false);
+      },
+      (err) => {
+        setError(err.code === err.PERMISSION_DENIED
+          ? "Location permission denied. Please enable in browser settings."
+          : "Could not fetch location. Try again.");
+        setLocating(false);
+      },
+      // maximumAge: 0 prevents the browser from reusing a stale cached fix.
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    );
+  };
+
+  // Address autocomplete using backend proxy (keeps API key secure)
+  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setAddress(value);
+    setValidated(false);
+    // The customer is typing a new address; ignore any in-flight reverse
+    // geocode or initial lookup that would overwrite it.
+    reverseRequestId.current += 1;
+    initialLookupRequestId.current += 1;
+
+    // Debounce requests so typing doesn't fire one API call per keystroke.
+    if (autocompleteTimer.current) {
+      clearTimeout(autocompleteTimer.current);
+      autocompleteTimer.current = null;
+    }
+
+    if (value.length <= 3) {
+      autocompleteRequestId.current += 1;
+      setSuggestions([]);
+      return;
+    }
+
+    autocompleteTimer.current = setTimeout(async () => {
+      const requestId = ++autocompleteRequestId.current;
+      try {
+        const res = await fetch(`${API_BASE_URL}/map/autocomplete?q=${encodeURIComponent(value)}`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        });
+        const data = await res.json();
+        if (requestId === autocompleteRequestId.current) {
+          setSuggestions(data.success ? data.suggestions || [] : []);
+        }
+      } catch {
+        if (requestId === autocompleteRequestId.current) setSuggestions([]);
+      }
+    }, 300);
+  };
+
   const selectSuggestion = (result: any) => {
+    if (autocompleteTimer.current) {
+      clearTimeout(autocompleteTimer.current);
+      autocompleteTimer.current = null;
+    }
+    reverseRequestId.current += 1;
+    autocompleteRequestId.current += 1;
+    initialLookupRequestId.current += 1;
+    pincodeRequestId.current += 1;
+    setPincodeLoading(false);
     setAddress(result.formatted);
-    const coords: [number, number] = [result.geometry.lng, result.geometry.lat];
-    setCoordinates(coords);
-    placeMarker([result.geometry.lat, result.geometry.lng]);
-    extractPincode(result.formatted);
+    const resultCoords: [number, number] = result.coordinates || [result.geometry?.lng, result.geometry?.lat];
+    if (isValidCoords(resultCoords)) {
+      placeMarker([resultCoords[1], resultCoords[0]]); // Leaflet uses [lat, lng]
+    } else {
+      setCoordinates(null);
+    }
+    const pickedPincode = result.components?.postcode || extractPincode(result.formatted);
+    if (pickedPincode) setPincode(pickedPincode);
+    setPincodeData(null);
     setSuggestions([]);
     setValidated(false);
+    setError("");
   };
 
   // Validate & Submit
@@ -138,12 +421,19 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
     setError("");
 
     try {
-      // FIX: relative path → full backend URL
+      const payload: Record<string, unknown> = { address, pincode };
+      if (coordinates) {
+        // Send the exact marker/GPS position. The backend treats this as the
+        // source of truth and only uses geocoding for the formatted address.
+        payload.lat = coordinates[1];
+        payload.lng = coordinates[0];
+      }
+
       const validateRes = await fetch(`${API_BASE_URL}/map/validate-address`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ address, pincode }),
+        body: JSON.stringify(payload),
       });
       const validateData = await validateRes.json();
 
@@ -153,23 +443,43 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
         return;
       }
 
-      if (!validateData.pincodeValid) {
+      // Handle pincode validation - now always valid=true, but may have warning
+      if (validateData.pincodeValid === false) {
         setError(`Pincode mismatch! ${validateData.pincodeMessage}`);
         setLoading(false);
         return;
       }
 
-      setCoordinates(validateData.coordinates);
+      // Show warning if pincode differs from geocoded location
+      if (validateData.suggestedPincode && validateData.suggestedPincode !== pincode) {
+        console.warn(`Pincode warning: ${validateData.pincodeMessage}`);
+      }
+
+      const chosenCoordinates: [number, number] = isValidCoords(validateData.coordinates)
+        ? [validateData.coordinates[0], validateData.coordinates[1]]
+        : (coordinates as [number, number]);
+
+      if (!isValidCoords(chosenCoordinates)) {
+        setError("Could not determine the selected location. Please drop a pin on the map.");
+        setLoading(false);
+        return;
+      }
+
+      setCoordinates(chosenCoordinates);
+      placeMarker([chosenCoordinates[1], chosenCoordinates[0]], { recenter: false });
       setValidated(true);
-      setAddress(validateData.formattedAddress);
+      setAddress(validateData.formattedAddress || address);
 
       onAddressSelect({
-        address: validateData.formattedAddress,
+        address: validateData.formattedAddress || address,
         pincode,
-        coordinates: validateData.coordinates,
-        formattedAddress: validateData.formattedAddress,
+        coordinates: chosenCoordinates,
+        formattedAddress: validateData.formattedAddress || address,
+        city: validateData.city,
+        state: validateData.state,
+        country: validateData.country,
       });
-    } catch (err) {
+    } catch {
       setError("Failed to validate address. Please try again.");
     }
     setLoading(false);
@@ -207,18 +517,57 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
 
       {/* Pincode Input */}
       <div>
-        <Label className="text-gray-700 dark:text-gray-300 font-medium mb-2 block">Pincode</Label>
+        <div className="flex items-center justify-between">
+          <Label className="text-gray-700 dark:text-gray-300 font-medium mb-2 block">Pincode</Label>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={useCurrentLocation}
+            disabled={loading || locating}
+            className="h-9 text-xs gap-1"
+          >
+            {locating ? (
+              <>
+                <Loader2 className="mr-2 w-3.5 h-3.5 animate-spin" />
+                Locating...
+              </>
+            ) : (
+              <>
+                <LocateFixed className="mr-2 w-3.5 h-3.5 text-orange-500" />
+                Use My Location
+              </>
+            )}
+          </Button>
+        </div>
         <Input
           type="text"
           value={pincode}
-          onChange={(e) => {
-            setPincode(e.target.value.replace(/\D/g, "").slice(0, 6));
-            setValidated(false);
-          }}
-          placeholder="6-digit pincode"
+          onChange={handlePincodeChange}
+          placeholder="6-digit pincode (auto-fills city/state)"
           maxLength={6}
           className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500"
         />
+
+        {/* Auto-filled location info from pincode */}
+        {pincodeData && (
+          <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg animate-fade-in">
+            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">Auto-filled from pincode:</p>
+            <div className="grid grid-cols-2 gap-2 mt-1 text-sm">
+              <span className="text-gray-600 dark:text-gray-400">City/District: <span className="font-medium text-gray-900 dark:text-white">{pincodeData.city || pincodeData.district || "-"}</span></span>
+              <span className="text-gray-600 dark:text-gray-400">State: <span className="font-medium text-gray-900 dark:text-white">{pincodeData.state || "-"}</span></span>
+              <span className="text-gray-600 dark:text-gray-400">Country: <span className="font-medium text-gray-900 dark:text-white">{pincodeData.country || "-"}</span></span>
+              <span className="text-gray-600 dark:text-gray-400">Post Offices: <span className="font-medium text-gray-900 dark:text-white">{pincodeData.postOffices?.length || 0}</span></span>
+            </div>
+          </div>
+        )}
+
+        {pincodeLoading && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-orange-500">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Looking up pincode...
+          </div>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
@@ -231,8 +580,9 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
       )}
 
       <Button
+        type="button"
         onClick={handleSubmit}
-        disabled={loading || !address || pincode.length !== 6}
+        disabled={loading || locating || !address || pincode.length !== 6}
         className="w-full h-12 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold rounded-lg shadow-md shadow-orange-500/20 disabled:opacity-50"
       >
         {loading ? (
@@ -255,6 +605,9 @@ const AddressPicker = ({ onAddressSelect, initialAddress = "", initialPincode = 
         ref={mapContainer}
         className="w-full h-64 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
       />
+      <p className="text-xs text-gray-400 dark:text-gray-500 -mt-1">
+        Click the map or drag the pin to select your exact delivery point.
+      </p>
     </div>
   );
 };

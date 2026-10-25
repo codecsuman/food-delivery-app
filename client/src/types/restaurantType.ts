@@ -6,7 +6,7 @@ export type MenuItem = {
   description: string;
   price: number;
   image: string;
-  restaurant?: string;
+  restaurant?: string | { _id: string; restaurantName: string; imageUrl?: string };
   imagePublicId?: string;
   popular?: boolean;
   orderCount?: number;
@@ -46,6 +46,8 @@ export type RestaurantState = {
   searchedRestaurant: SearchedRestaurant | null;
   appliedFilter: string[];
   singleRestaurant: Restaurant | null;
+  /** Set when a restaurant detail request fails, so the UI can stop showing a skeleton. */
+  singleRestaurantError: string | null;
   restaurantOrder: Orders[];
   filterOptions: FilterOptionsData;
   createRestaurant: (formData: FormData) => Promise<void>;

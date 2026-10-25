@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const OPENCAGE_KEY = process.env.OPENCAGE_API_KEY;
+const PINCODE_API_BASE = "https://api.pincodeapi.in/api/v1";
 const DELIVERY_SPEED = parseFloat(
   process.env.DELIVERY_SPEED_KM_PER_MIN || "0.333",
 );
@@ -8,6 +9,10 @@ const MAX_RADIUS = parseFloat(process.env.MAX_DELIVERY_RADIUS_KM || "10");
 
 // Earth's radius in km for Haversine formula
 const EARTH_RADIUS_KM = 6371;
+
+// Simple in-memory cache for pincode lookups (TTL: 1 hour)
+const pincodeCache = new Map<string, { data: any; expiry: number }>();
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export interface GeocodeResult {
   success: boolean;
@@ -26,10 +31,52 @@ export interface ReverseGeocodeResult {
   message?: string;
 }
 
+export interface PostalRecord {
+  id: number | null;
+  circle: string | null;
+  circle_slug: string | null;
+  region: string | null;
+  region_slug: string | null;
+  division: string | null;
+  division_slug: string | null;
+  office_name: string;
+  office_slug: string | null;
+  pincode: string;
+  office_type: string | null;
+  delivery_status: string | null;
+  district: string | null;
+  district_slug: string | null;
+  state: string | null;
+  state_slug: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  digipin: string | null;
+}
+
+export interface PincodeLookupResult {
+  success: boolean;
+  pincode?: string;
+  postOffices?: PostalRecord[];
+  city?: string;
+  district?: string;
+  state?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+  message?: string;
+}
+
 export interface PincodeValidationResult {
   valid: boolean;
   message: string;
   suggestedAddress?: string;
+  suggestedPincode?: string;
+  // Auto-fill fields from pincode lookup
+  city?: string;
+  district?: string;
+  state?: string;
+  country?: string;
+  postOffices?: PostalRecord[];
 }
 
 export interface DistanceTimeResult {
@@ -109,25 +156,139 @@ class MapService {
     }
   }
 
-  // ========== PINCODE VALIDATION ==========
+  // ========== PINCODE LOOKUP (Pincode API - Free, No Key Required) ==========
+  async lookupPincode(pincode: string): Promise<PincodeLookupResult> {
+    // Validate format
+    if (!/^\d{6}$/.test(pincode)) {
+      return { success: false, message: "Pincode must be 6 digits" };
+    }
+
+    // Check cache first
+    const cached = pincodeCache.get(pincode);
+    if (cached && cached.expiry > Date.now()) {
+      return { success: true, ...cached.data };
+    }
+
+    try {
+      const url = `${PINCODE_API_BASE}/pincode/${pincode}`;
+      const res = await axios.get(url, {
+        timeout: 5000,
+        headers: { "Accept": "application/json" }
+      });
+
+      if (res.data.success && res.data.data?.post_offices?.length > 0) {
+        const postOffices: PostalRecord[] = res.data.data.post_offices;
+        const firstOffice = postOffices[0];
+
+        // Extract unique city, district, state from all post offices
+        const cities = [...new Set(postOffices.map(o => o.district).filter(Boolean))];
+        const districts = [...new Set(postOffices.map(o => o.district).filter(Boolean))];
+        const states = [...new Set(postOffices.map(o => o.state).filter(Boolean))];
+
+        // Prefer the first office's data, but collect all unique values
+        const result = {
+          success: true,
+          pincode,
+          postOffices,
+          city: firstOffice.district || cities[0] || "", // district often serves as city
+          district: firstOffice.district || districts[0] || "",
+          state: firstOffice.state || states[0] || "",
+          country: "India",
+          latitude: firstOffice.latitude ?? undefined,
+          longitude: firstOffice.longitude ?? undefined,
+        };
+
+        // Cache the result
+        pincodeCache.set(pincode, { data: result, expiry: Date.now() + CACHE_TTL_MS });
+
+        return result;
+      }
+
+      return { success: false, message: "Pincode not found" };
+    } catch (error: any) {
+      // Handle rate limiting (429) gracefully
+      if (error.response?.status === 429) {
+        return { success: false, message: "Rate limit reached. Please try again in a few seconds." };
+      }
+      return { success: false, message: error.message || "Failed to lookup pincode" };
+    }
+  }
+
+  // ========== PINCODE VALIDATION WITH AUTO-FILL ==========
   async validatePincode(
     pincode: string,
-    coordinates: [number, number],
+    coordinates?: [number, number],
   ): Promise<PincodeValidationResult> {
+    // 1. Basic format validation
     if (!/^\d{6}$/.test(pincode)) {
       return { valid: false, message: "Pincode must be 6 digits" };
     }
 
+    // 2. Lookup pincode via Pincode API (free, no key)
+    const pincodeData = await this.lookupPincode(pincode);
+    
+    if (!pincodeData.success) {
+      // If pincode API fails, fall back to coordinate-based validation
+      if (coordinates) {
+        return this.validatePincodeWithCoordinates(pincode, coordinates);
+      }
+      return { 
+        valid: false, 
+        message: pincodeData.message || "Invalid pincode" 
+      };
+    }
+
+    // 3. If coordinates provided, verify they match the pincode area
+    if (coordinates && pincodeData.latitude && pincodeData.longitude) {
+      const distance = this.calculateDistanceKm(
+        coordinates,
+        [pincodeData.longitude, pincodeData.latitude]
+      );
+      
+      // Allow ~15km tolerance for pincode area (pincodes cover large areas)
+      if (distance > 15) {
+        return {
+          valid: true, // Still allow but warn
+          message: `Pincode ${pincode} is valid but location is ${distance.toFixed(1)}km from pincode center.`,
+          suggestedPincode: pincode,
+          city: pincodeData.city,
+          district: pincodeData.district,
+          state: pincodeData.state,
+          country: pincodeData.country,
+          postOffices: pincodeData.postOffices,
+        };
+      }
+    }
+
+    // 4. Success - return auto-fill data
+    return {
+      valid: true,
+      message: "Pincode verified",
+      city: pincodeData.city,
+      district: pincodeData.district,
+      state: pincodeData.state,
+      country: pincodeData.country,
+      postOffices: pincodeData.postOffices,
+    };
+  }
+
+  // Fallback validation using coordinates + OpenCage reverse geocode
+  private async validatePincodeWithCoordinates(
+    pincode: string,
+    coordinates: [number, number],
+  ): Promise<PincodeValidationResult> {
     const reverse = await this.reverseGeocode(coordinates[0], coordinates[1]);
     if (!reverse.success)
       return { valid: false, message: "Invalid coordinates" };
 
     const foundPincode = reverse.pincode || reverse.components?.postcode;
+    
     if (foundPincode && foundPincode !== pincode) {
       return {
-        valid: false,
-        message: `Pincode mismatch! Expected ${pincode}, found ${foundPincode}`,
+        valid: true,
+        message: `Pincode may not match exact location. Found ${foundPincode} for this address. Using your pincode ${pincode}.`,
         suggestedAddress: reverse.address,
+        suggestedPincode: foundPincode,
       };
     }
 
@@ -219,6 +380,8 @@ class MapService {
   }
 
   // ========== GET ROUTE COORDINATES FOR LIVE TRACKING ==========
+  // Note: This returns straight-line coordinates. For actual road routes,
+  // integrate OSRM (free, self-hosted) or Mapbox Directions API later.
   getRouteCoordinates(
     start: [number, number],
     end: [number, number],

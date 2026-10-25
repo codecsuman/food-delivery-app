@@ -1,7 +1,9 @@
 import { Request, Response } from "express";
 import { Review } from "../models/review.model.js";
 import { Restaurant } from "../models/restaurant.model.js";
+import { Order } from "../models/order.model.js";
 import mongoose from "mongoose";
+import { isValidObjectId } from "../utils/objectId.js";
 
 // ======================= ADD REVIEW =======================
 export const addReview = async (req: Request, res: Response) => {
@@ -15,7 +17,7 @@ export const addReview = async (req: Request, res: Response) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+    if (!isValidObjectId(restaurantId)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid restaurant ID" });
@@ -25,6 +27,20 @@ export const addReview = async (req: Request, res: Response) => {
       return res
         .status(400)
         .json({ success: false, message: "Rating must be between 1 and 5" });
+    }
+
+    // SECURITY FIX: Verify user has actually ordered from this restaurant and it was delivered
+    const hasOrdered = await Order.findOne({
+      user: req.id,
+      restaurant: restaurantId,
+      status: "delivered",
+    });
+
+    if (!hasOrdered) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only review restaurants you have ordered from and received delivery from",
+      });
     }
 
     const existingReview = await Review.findOne({
@@ -83,8 +99,7 @@ export const addReview = async (req: Request, res: Response) => {
       message: "Review added successfully",
       review: populatedReview,
     });
-  } catch (error) {
-    console.error("Add review error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -96,7 +111,7 @@ export const getReviewsByRestaurant = async (req: Request, res: Response) => {
   try {
     const { restaurantId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+    if (!isValidObjectId(restaurantId)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid restaurant ID" });
@@ -129,8 +144,7 @@ export const getReviewsByRestaurant = async (req: Request, res: Response) => {
         limit,
       },
     });
-  } catch (error) {
-    console.error("Get reviews error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -167,8 +181,7 @@ export const getUserReviews = async (req: Request, res: Response) => {
         limit,
       },
     });
-  } catch (error) {
-    console.error("Get user reviews error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -180,7 +193,7 @@ export const deleteReview = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid review ID" });
@@ -223,8 +236,7 @@ export const deleteReview = async (req: Request, res: Response) => {
     return res
       .status(200)
       .json({ success: true, message: "Review deleted successfully" });
-  } catch (error) {
-    console.error("Delete review error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });

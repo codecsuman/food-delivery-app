@@ -1,6 +1,7 @@
 import axios from "axios";
 import { toast } from "sonner";
 import { create } from "zustand";
+import { MenuItem } from "@/types/restaurantType";
 
 const API_END_POINT = `${import.meta.env.VITE_API_BASE_URL}/menu`;
 axios.defaults.withCredentials = true;
@@ -13,29 +14,23 @@ const getErrorMessage = (error: any): string => {
   );
 };
 
-type MenuItem = {
-  _id: string;
-  name: string;
-  description: string;
-  price: number;
-  image: string;
-  restaurant: string;
-};
-
 type MenuState = {
   loading: boolean;
   menu: MenuItem | null;
   menus: MenuItem[];
+  popularMenus: MenuItem[];
   createMenu: (formData: FormData) => Promise<MenuItem | null>;
   editMenu: (menuId: string, formData: FormData) => Promise<MenuItem | null>;
   deleteMenu: (menuId: string) => Promise<boolean>;
   getAllMenus: () => Promise<void>;
+  getPopularMenus: () => Promise<void>;
 };
 
 export const useMenuStore = create<MenuState>((set) => ({
   loading: false,
   menu: null,
   menus: [],
+  popularMenus: [],
 
   createMenu: async (formData: FormData) => {
     try {
@@ -112,6 +107,20 @@ export const useMenuStore = create<MenuState>((set) => ({
       const response = await axios.get(`${API_END_POINT}/`);
       if (response.data.success) {
         set({ menus: response.data.menus || [] });
+      }
+    } catch (error: any) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  getPopularMenus: async () => {
+    try {
+      set({ loading: true });
+      const response = await axios.get(`${API_END_POINT}/popular`);
+      if (response.data.success) {
+        set({ popularMenus: response.data.menus || [] });
       }
     } catch (error: any) {
       toast.error(getErrorMessage(error));

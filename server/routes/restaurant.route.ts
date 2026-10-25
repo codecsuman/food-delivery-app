@@ -14,11 +14,13 @@ import {
 } from "../controller/restaurant.controller.js";
 import upload from "../middlewares/multer.js";
 import { isAuthenticated, isAdmin } from "../middlewares/isAuthenticated.js";
+import { validate } from "../middlewares/validate.js";
+import { createRestaurantSchema, updateRestaurantSchema, updateOrderStatusSchema, idParamSchema, orderIdParamSchema, searchSchema, paginationSchema } from "../schemas/validation.js";
 
 const router = express.Router();
 
 // Create restaurant (any logged-in user — but only their own)
-router.post("/", isAuthenticated, upload.single("imageFile"), createRestaurant);
+router.post("/", isAuthenticated, upload.single("imageFile"), validate(createRestaurantSchema), createRestaurant);
 
 // Get my restaurant (any logged-in user)
 router.get("/", isAuthenticated, getRestaurant);
@@ -26,40 +28,45 @@ router.get("/", isAuthenticated, getRestaurant);
 // Get all user's restaurants (multiple)
 router.get("/my-restaurants", isAuthenticated, getUserRestaurants);
 
-// Get all restaurants (public)
-router.get("/all", getAllRestaurants);
+// Get all restaurants (public) - with pagination
+router.get("/all", validate(paginationSchema, "query"), getAllRestaurants);
 
 // Update my restaurant (any logged-in user)
-router.put("/", isAuthenticated, upload.single("imageFile"), updateRestaurant);
+router.put("/", isAuthenticated, upload.single("imageFile"), validate(updateRestaurantSchema), updateRestaurant);
 
 // Update restaurant by ID
 router.put(
   "/:id",
   isAuthenticated,
   upload.single("imageFile"),
-  updateRestaurant,
+  validate(updateRestaurantSchema),
+  validate(idParamSchema, "params"),
+  updateRestaurant
 );
 
 // Delete restaurant
-router.delete("/:id", isAuthenticated, deleteRestaurant);
+router.delete("/:id", isAuthenticated, validate(idParamSchema, "params"), deleteRestaurant);
 
 // Get orders for my restaurant (any logged-in user)
-router.get("/order", isAuthenticated, getRestaurantOrder);
+router.get("/order", isAuthenticated, validate(paginationSchema, "query"), getRestaurantOrder);
 
 // Update order status (any logged-in user who owns the restaurant)
-router.put("/order/:orderId/status", isAuthenticated, updateOrderStatus);
+router.put(
+  "/order/:orderId/status",
+  isAuthenticated,
+  validate(updateOrderStatusSchema),
+  validate(orderIdParamSchema, "params"),
+  updateOrderStatus
+);
 
 // Search restaurants (public)
-router.get("/search/:searchText", searchRestaurant);
-// Additional route for query-only search (from hero section)
-router.get("/search", searchRestaurant);
+router.get("/search/:searchText", validate(searchSchema, "query"), searchRestaurant);
+router.get("/search", validate(searchSchema, "query"), searchRestaurant);
 
 // Filter options — distinct cuisines & dishes (public)
-// Must stay ABOVE the "/:id" route below, or "/filters" gets
-// captured as :id and hits getSingleRestaurant instead.
 router.get("/filters", getFilterOptions);
 
 // Get single restaurant (public)
-router.get("/:id", getSingleRestaurant);
+router.get("/:id", validate(idParamSchema, "params"), getSingleRestaurant);
 
 export default router;

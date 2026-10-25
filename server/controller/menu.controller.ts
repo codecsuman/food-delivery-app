@@ -12,10 +12,10 @@ import mongoose from "mongoose";
 // ======================= ADD MENU =======================
 export const addMenu = async (req: Request, res: Response) => {
   try {
-    const { name, description, price } = req.body;
+    const { name, description, price, restaurantId } = req.body;
     const file = req.file;
 
-    if (!name || !description || !price) {
+    if (!name || !description || price === undefined || price === null || price === "") {
       return res.status(400).json({
         success: false,
         message: "Name, description and price are required",
@@ -29,7 +29,11 @@ export const addMenu = async (req: Request, res: Response) => {
       });
     }
 
-    const restaurant = await Restaurant.findOne({ user: req.id });
+    // Owners can have multiple restaurants. Prefer the explicitly supplied
+    // restaurant; otherwise fall back to the owner's first restaurant.
+    const restaurant = restaurantId
+      ? await Restaurant.findOne({ _id: restaurantId, user: req.id })
+      : await Restaurant.findOne({ user: req.id });
     if (!restaurant) {
       return res.status(404).json({
         success: false,
@@ -67,8 +71,7 @@ export const addMenu = async (req: Request, res: Response) => {
       message: "Menu added successfully",
       menu: menuResponse,
     });
-  } catch (error) {
-    console.error("Add menu error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -97,15 +100,11 @@ export const editMenu = async (req: Request, res: Response) => {
       });
     }
 
-    const restaurant = await Restaurant.findOne({ user: req.id });
-    if (!restaurant) {
-      return res.status(404).json({
-        success: false,
-        message: "Restaurant not found",
-      });
-    }
-
-    if (menu.restaurant.toString() !== restaurant._id.toString()) {
+    const ownsMenuRestaurant = await Restaurant.exists({
+      _id: menu.restaurant,
+      user: req.id,
+    });
+    if (!ownsMenuRestaurant) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to edit this menu item",
@@ -144,8 +143,7 @@ export const editMenu = async (req: Request, res: Response) => {
       message: "Menu updated successfully",
       menu: menuResponse,
     });
-  } catch (error) {
-    console.error("Edit menu error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -172,11 +170,11 @@ export const deleteMenu = async (req: Request, res: Response) => {
       });
     }
 
-    const restaurant = await Restaurant.findOne({ user: req.id });
-    if (
-      !restaurant ||
-      menu.restaurant.toString() !== restaurant._id.toString()
-    ) {
+    const restaurant = await Restaurant.findOne({
+      _id: menu.restaurant,
+      user: req.id,
+    });
+    if (!restaurant) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to delete this menu item",
@@ -218,8 +216,7 @@ export const deleteMenu = async (req: Request, res: Response) => {
       success: true,
       message: "Menu deleted successfully",
     });
-  } catch (error) {
-    console.error("Delete menu error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -264,8 +261,30 @@ export const getMenuByRestaurant = async (req: Request, res: Response) => {
         limit,
       },
     });
-  } catch (error) {
-    console.error("Get menu by restaurant error:", error);
+  } catch {
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ======================= GET POPULAR MENUS (most ordered) =======================
+// Returns max 6 items for home page popular section
+export const getPopularMenus = async (req: Request, res: Response) => {
+  try {
+    const limit = 6; // Fixed: max 6 popular items
+
+    const menus = await Menu.find()
+      .sort({ orderCount: -1, createdAt: -1 })
+      .limit(limit)
+      .populate("restaurant", "restaurantName imageUrl");
+
+    return res.status(200).json({
+      success: true,
+      count: menus.length,
+      menus,
+    });
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -283,7 +302,11 @@ export const getAllMenus = async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
 
     const [menus, totalCount] = await Promise.all([
-      Menu.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Menu.find()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("restaurant", "restaurantName imageUrl"),
       Menu.countDocuments(),
     ]);
 
@@ -298,8 +321,7 @@ export const getAllMenus = async (req: Request, res: Response) => {
         limit,
       },
     });
-  } catch (error) {
-    console.error("Get all menus error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });

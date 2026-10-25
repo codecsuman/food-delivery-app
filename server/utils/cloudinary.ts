@@ -16,14 +16,6 @@ if (hasCloudinaryConfig) {
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
   });
-  console.log("✅ [Cloudinary] Configured successfully.");
-} else {
-  console.log(
-    "⚠️  [Cloudinary] Environment variables missing — image uploads will be skipped.",
-  );
-  console.log(
-    "   Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in .env",
-  );
 }
 
 // Upload image to Cloudinary
@@ -32,7 +24,6 @@ export const uploadImage = async (
   folder: string = "suman-food",
 ) => {
   if (!hasCloudinaryConfig) {
-    console.warn("⚠️  [Cloudinary] Skipping upload — config not available.");
     return {
       secure_url: "https://via.placeholder.com/400x300?text=No+Image",
       public_id: "placeholder",
@@ -49,7 +40,7 @@ export const uploadImage = async (
       public_id: result.public_id,
     };
   } catch (error) {
-    console.error("❌ Cloudinary upload error:", error);
+    console.error("Cloudinary upload error:", error);
     throw new Error("Failed to upload image to Cloudinary");
   }
 };
@@ -63,7 +54,7 @@ export const deleteImage = async (publicId: string) => {
   try {
     await cloudinary.uploader.destroy(publicId);
   } catch (error) {
-    console.error("❌ Cloudinary delete error:", error);
+    console.error("Cloudinary delete error:", error);
   }
 };
 

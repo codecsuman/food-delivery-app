@@ -6,10 +6,15 @@ export const restaurantFromSchema = z.object({
     .min(2, "Restaurant name must be at least 2 characters")
     .max(100, "Restaurant name cannot exceed 100 characters"),
   city: z.string().min(1, "City is required").max(50, "City name too long"),
+  state: z.string().max(50, "State name too long").optional().default(""),
   country: z
     .string()
     .min(1, "Country is required")
     .max(50, "Country name too long"),
+  pincode: z
+    .string()
+    .min(1, "Pincode is required")
+    .regex(/^\d{6}$/, "Pincode must be a 6-digit number"),
   deliveryTime: z
     .number()
     .min(0, "Delivery time cannot be negative")

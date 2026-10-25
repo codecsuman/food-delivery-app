@@ -5,15 +5,16 @@ export interface IUser {
   email: string;
   password: string;
   contact: number;
+  alternateContact: number;
   address: string;
+  pincode: string;
   city: string;
+  state: string;
   country: string;
   profilePicture: string;
   admin: boolean;
   lastLogin?: Date;
   isVerified?: boolean;
-  resetPasswordToken?: string;
-  resetPasswordTokenExpiresAt?: Date;
   verificationToken?: string;
   verificationTokenExpiresAt?: Date;
 }
@@ -60,12 +61,34 @@ const userSchema = new mongoose.Schema<IUserDocument>(
         message: "Contact number must be exactly 10 digits",
       },
     },
+    alternateContact: {
+      type: Number,
+      default: null,
+      validate: {
+        validator: function (v: number | null) {
+          if (v === null) return true;
+          return /^\d{10}$/.test(v.toString());
+        },
+        message: "Alternate contact must be exactly 10 digits",
+      },
+    },
     address: {
       type: String,
       default: "",
       trim: true,
     },
+    pincode: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 6,
+    },
     city: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    state: {
       type: String,
       default: "",
       trim: true,
@@ -91,8 +114,6 @@ const userSchema = new mongoose.Schema<IUserDocument>(
       type: Boolean,
       default: false,
     },
-    resetPasswordToken: String,
-    resetPasswordTokenExpiresAt: Date,
     verificationToken: String,
     verificationTokenExpiresAt: Date,
   },
@@ -102,8 +123,7 @@ const userSchema = new mongoose.Schema<IUserDocument>(
 // REMOVE duplicate email index — unique: true already creates it automatically
 // userSchema.index({ email: 1 });  ← DELETED (was causing duplicate index warning)
 
-// Keep these — they don't conflict with unique fields
-userSchema.index({ resetPasswordToken: 1 });
+// Keep this — it doesn't conflict with unique fields
 userSchema.index({ verificationToken: 1 });
 
 export const User: Model<IUserDocument> = mongoose.model<IUserDocument>(

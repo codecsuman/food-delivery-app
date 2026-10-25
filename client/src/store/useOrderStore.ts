@@ -113,7 +113,19 @@ export const useOrderStore = create<OrderState>((set) => ({
       set({ loading: true });
       const response = await axios.get(`${API_END_POINT}/${orderId}`);
       if (response.data.success) {
-        return response.data.order;
+        const order = response.data.order;
+        // Keep the store in sync so direct links / refreshes don't need a
+        // second fetch when the user navigates between order pages.
+        set((state) => {
+          const exists = state.orders.some((o) => o._id === order._id);
+          if (!exists) return { orders: [order, ...state.orders] };
+          return {
+            orders: state.orders.map((o) =>
+              o._id === order._id ? order : o,
+            ),
+          };
+        });
+        return order;
       }
       return null;
     } catch (error: any) {
@@ -136,8 +148,8 @@ export const useOrderStore = create<OrderState>((set) => ({
         }));
         return updatedOrder;
       }
-    } catch (error) {
-      console.error("Poll error:", error);
+    } catch {
+      // Poll error - silent
     }
     return null;
   },

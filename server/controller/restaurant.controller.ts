@@ -2,7 +2,9 @@ import { Request, Response } from "express";
 import { Restaurant } from "../models/restaurant.model.js";
 import { uploadImage, deleteImage } from "../utils/cloudinary.js";
 import { Order } from "../models/order.model.js";
+import { logger } from "../utils/logger.js";
 import mongoose from "mongoose";
+import { isValidObjectId } from "../utils/objectId.js";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["confirmed", "cancelled", "payment_failed"],
@@ -21,6 +23,7 @@ export const createRestaurant = async (req: Request, res: Response) => {
       restaurantName,
       city,
       country,
+      pincode,
       deliveryTime,
       deliveryPrice,
       cuisines,
@@ -28,13 +31,6 @@ export const createRestaurant = async (req: Request, res: Response) => {
       lng,
     } = req.body;
     const file = req.file;
-
-    if (!restaurantName || !city || !country || !deliveryTime || !cuisines) {
-      return res.status(400).json({
-        success: false,
-        message: "All fields are required",
-      });
-    }
 
     if (!file) {
       return res.status(400).json({
@@ -64,21 +60,6 @@ export const createRestaurant = async (req: Request, res: Response) => {
       });
     }
 
-    const parsedLat = lat !== undefined ? Number(lat) : undefined;
-    const parsedLng = lng !== undefined ? Number(lng) : undefined;
-
-    if (
-      parsedLat === undefined ||
-      parsedLng === undefined ||
-      Number.isNaN(parsedLat) ||
-      Number.isNaN(parsedLng)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Restaurant location (lat/lng) is required",
-      });
-    }
-
     const base64Image = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
     const cloudResponse = await uploadImage(
       base64Image,
@@ -90,6 +71,7 @@ export const createRestaurant = async (req: Request, res: Response) => {
       restaurantName: restaurantName.trim(),
       city: city.trim(),
       country: country.trim(),
+      pincode: pincode.trim(),
       deliveryTime: Number(deliveryTime),
       deliveryPrice: deliveryPrice ? Number(deliveryPrice) : 0,
       cuisines: parsedCuisines.map((c: string) => c.trim()),
@@ -97,7 +79,7 @@ export const createRestaurant = async (req: Request, res: Response) => {
       imagePublicId: cloudResponse.public_id,
       location: {
         type: "Point",
-        coordinates: [parsedLng, parsedLat],
+        coordinates: [Number(lng), Number(lat)],
       },
     });
 
@@ -106,8 +88,8 @@ export const createRestaurant = async (req: Request, res: Response) => {
       message: "Restaurant created successfully",
       restaurant,
     });
-  } catch (error) {
-    console.error("Create restaurant error:", error);
+  } catch (error: any) {
+    logger.error({ err: error }, "Create restaurant error");
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -117,9 +99,21 @@ export const createRestaurant = async (req: Request, res: Response) => {
 // ======================= GET RESTAURANT (for logged-in user) =======================
 export const getRestaurant = async (req: Request, res: Response) => {
   try {
-    const restaurant = await Restaurant.findOne({ user: req.id }).populate(
-      "menus",
-    );
+    const { restaurantId } = req.query as { restaurantId?: string };
+
+    if (restaurantId && !isValidObjectId(restaurantId)) {
+      return res.status(400).json({
+        success: false,
+        restaurant: null,
+        message: "Invalid restaurant ID",
+      });
+    }
+
+    const restaurant = await Restaurant.findOne(
+      restaurantId
+        ? { _id: restaurantId, user: req.id }
+        : { user: req.id },
+    ).populate("menus");
 
     if (!restaurant) {
       return res.status(404).json({
@@ -130,8 +124,7 @@ export const getRestaurant = async (req: Request, res: Response) => {
     }
 
     return res.status(200).json({ success: true, restaurant });
-  } catch (error) {
-    console.error("Get restaurant error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -150,8 +143,7 @@ export const getUserRestaurants = async (req: Request, res: Response) => {
       count: restaurants.length,
       restaurants,
     });
-  } catch (error) {
-    console.error("Get user restaurants error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -170,8 +162,7 @@ export const getAllRestaurants = async (_req: Request, res: Response) => {
       count: restaurants.length,
       restaurants,
     });
-  } catch (error) {
-    console.error("Get all restaurants error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -186,6 +177,7 @@ export const updateRestaurant = async (req: Request, res: Response) => {
       restaurantName,
       city,
       country,
+      pincode,
       deliveryTime,
       deliveryPrice,
       cuisines,
@@ -194,6 +186,9 @@ export const updateRestaurant = async (req: Request, res: Response) => {
     } = req.body;
     const file = req.file;
 
+    // The client may update via PUT /restaurant/:id (preferred) or PUT
+    // /restaurant/ for backwards compatibility. In the latter case resolve the
+    // restaurant that belongs to the current user.
     const restaurant = id
       ? await Restaurant.findOne({ _id: id, user: req.id })
       : await Restaurant.findOne({ user: req.id });
@@ -201,7 +196,7 @@ export const updateRestaurant = async (req: Request, res: Response) => {
     if (!restaurant) {
       return res.status(404).json({
         success: false,
-        message: "Restaurant not found",
+        message: "Restaurant not found or you are not authorized",
       });
     }
 
@@ -209,25 +204,16 @@ export const updateRestaurant = async (req: Request, res: Response) => {
       restaurant.restaurantName = restaurantName.trim();
     if (city !== undefined) restaurant.city = city.trim();
     if (country !== undefined) restaurant.country = country.trim();
+    if (pincode !== undefined) restaurant.pincode = pincode.trim();
     if (deliveryTime !== undefined)
       restaurant.deliveryTime = Number(deliveryTime);
     if (deliveryPrice !== undefined)
       restaurant.deliveryPrice = Number(deliveryPrice);
 
     if (lat !== undefined && lng !== undefined) {
-      const parsedLat = Number(lat);
-      const parsedLng = Number(lng);
-
-      if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid lat/lng values",
-        });
-      }
-
       restaurant.location = {
         type: "Point",
-        coordinates: [parsedLng, parsedLat],
+        coordinates: [Number(lng), Number(lat)],
       };
     }
 
@@ -263,8 +249,8 @@ export const updateRestaurant = async (req: Request, res: Response) => {
       if (restaurant.imagePublicId) {
         try {
           await deleteImage(restaurant.imagePublicId);
-        } catch (deleteError) {
-          console.warn("Failed to delete old image:", deleteError);
+        } catch {
+          // Failed to delete old image
         }
       }
 
@@ -289,8 +275,8 @@ export const updateRestaurant = async (req: Request, res: Response) => {
       message: "Restaurant updated successfully",
       restaurant: updatedRestaurant,
     });
-  } catch (error) {
-    console.error("Update restaurant error:", error);
+  } catch (error: any) {
+    logger.error({ err: error }, "Update restaurant error");
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -302,7 +288,7 @@ export const deleteRestaurant = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid restaurant ID" });
@@ -328,8 +314,7 @@ export const deleteRestaurant = async (req: Request, res: Response) => {
       success: true,
       message: "Restaurant deleted successfully",
     });
-  } catch (error) {
-    console.error("Delete restaurant error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -339,12 +324,30 @@ export const deleteRestaurant = async (req: Request, res: Response) => {
 // ======================= GET RESTAURANT ORDERS =======================
 export const getRestaurantOrder = async (req: Request, res: Response) => {
   try {
-    const restaurant = await Restaurant.findOne({ user: req.id });
-    if (!restaurant) {
+    // Owners can have multiple restaurants. If a restaurantId is supplied,
+    // scope to it; otherwise return orders across all of the owner's
+    // restaurants (the previous `findOne` silently ignored every restaurant
+    // after the first).
+    const requestedRestaurantId = req.query.restaurantId as string | undefined;
+
+    if (requestedRestaurantId && !isValidObjectId(requestedRestaurantId)) {
+      return res.status(400).json({ success: false, message: "Invalid restaurant ID" });
+    }
+
+    const restaurants = await Restaurant.find(
+      requestedRestaurantId
+        ? { _id: requestedRestaurantId, user: req.id }
+        : { user: req.id },
+    ).select("_id");
+
+    if (restaurants.length === 0) {
       return res
         .status(404)
         .json({ success: false, message: "Restaurant not found" });
     }
+
+    const restaurantIds = restaurants.map((r) => r._id);
+    const filter = { restaurant: { $in: restaurantIds } };
 
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(
@@ -354,13 +357,13 @@ export const getRestaurantOrder = async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
 
     const [orders, totalCount] = await Promise.all([
-      Order.find({ restaurant: restaurant._id })
+      Order.find(filter)
         .populate("restaurant", "restaurantName imageUrl")
         .populate("user", "fullname email")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      Order.countDocuments({ restaurant: restaurant._id }),
+      Order.countDocuments(filter),
     ]);
 
     return res.status(200).json({
@@ -373,8 +376,7 @@ export const getRestaurantOrder = async (req: Request, res: Response) => {
         limit,
       },
     });
-  } catch (error) {
-    console.error("Get restaurant orders error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -404,7 +406,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    if (!isValidObjectId(orderId)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid order ID" });
@@ -417,11 +419,11 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
         .json({ success: false, message: "Order not found" });
     }
 
-    const restaurant = await Restaurant.findOne({ user: req.id });
-    if (
-      !restaurant ||
-      order.restaurant.toString() !== restaurant._id.toString()
-    ) {
+    const ownsRestaurant = await Restaurant.exists({
+      _id: order.restaurant,
+      user: req.id,
+    });
+    if (!ownsRestaurant) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to update this order",
@@ -452,8 +454,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       status: order.status,
       message: "Order status updated successfully",
     });
-  } catch (error) {
-    console.error("Update order status error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -561,8 +562,7 @@ export const searchRestaurant = async (req: Request, res: Response) => {
     return res
       .status(200)
       .json({ success: true, count: restaurants.length, restaurants });
-  } catch (error) {
-    console.error("Search restaurant error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -584,8 +584,7 @@ export const getFilterOptions = async (_req: Request, res: Response) => {
       cuisines: cuisines.filter(Boolean).sort(),
       dishes: dishes.filter(Boolean).sort(),
     });
-  } catch (error) {
-    console.error("Get filter options error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });
@@ -597,7 +596,7 @@ export const getSingleRestaurant = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid restaurant ID" });
@@ -615,8 +614,7 @@ export const getSingleRestaurant = async (req: Request, res: Response) => {
     }
 
     return res.status(200).json({ success: true, restaurant });
-  } catch (error) {
-    console.error("Get single restaurant error:", error);
+  } catch {
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" });

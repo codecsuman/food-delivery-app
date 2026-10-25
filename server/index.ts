@@ -1,16 +1,56 @@
 // =========================
 // LOAD ENV FIRST
 // =========================
-import dotenv from "dotenv";
+// IMPORTANT: this side-effect import must stay first. It loads .env before
+// any other module (mapService, order controller, etc.) reads process.env at
+// import time.
+import "./config/env.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer } from "http";
 import { Server as SocketServer } from "socket.io";
+import mongoose from "mongoose";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config({ path: path.resolve(__dirname, ".env") });
+// =========================
+// ENV VALIDATION AT STARTUP
+// =========================
+const requiredEnvVars = [
+  "MONGO_URI",
+  "SECRET_KEY",
+  "FRONTEND_URL",
+  "OPENCAGE_API_KEY",
+  "STRIPE_SECRET_KEY",
+  "WEBHOOK_ENDPOINT_SECRET",
+  "CLOUDINARY_CLOUD_NAME",
+  "CLOUDINARY_API_KEY",
+  "CLOUDINARY_API_SECRET",
+];
+
+const missingEnvVars = requiredEnvVars.filter((v) => !process.env[v]);
+if (missingEnvVars.length > 0) {
+  console.error("❌ Missing required environment variables:", missingEnvVars.join(", "));
+  process.exit(1);
+}
+
+// Validate SECRET_KEY strength
+if (process.env.SECRET_KEY!.length < 32) {
+  console.error("❌ SECRET_KEY must be at least 32 characters");
+  process.exit(1);
+}
+
+// Validate FRONTEND_URL format
+const allowedOrigins = process.env.FRONTEND_URL!.split(",").map((o) => o.trim()).filter(Boolean);
+for (const origin of allowedOrigins) {
+  try {
+    new URL(origin);
+  } catch {
+    console.error(`❌ Invalid FRONTEND_URL origin: ${origin}`);
+    process.exit(1);
+  }
+}
 
 // =========================
 // IMPORTS
@@ -18,6 +58,7 @@ dotenv.config({ path: path.resolve(__dirname, ".env") });
 import express, { Request, Response } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import helmet from "helmet";
 import connectDB from "./db/connectDB.js";
 import userRoute from "./routes/user.route.js";
 import restaurantRoute from "./routes/restaurant.route.js";
@@ -28,33 +69,58 @@ import mapRoute from "./routes/map.route.js";
 import { setupTrackingSocket } from "./socketHandlers/trackingSocket.js";
 import bodyParser from "body-parser";
 import { stripeWebhook } from "./controller/order.controller.js";
+import { logger } from "./utils/logger.js";
+import { getTransactionSupport } from "./utils/transactions.js";
+import { apiRateLimiter } from "./middlewares/rateLimit.js";
+import { sanitizeBody } from "./middlewares/validate.js";
 
 const app = express();
 const PORT = process.env.PORT || 8001;
 
+// Behind a reverse proxy (Render/Vercel/etc.) this makes req.ip reflect the
+// real client address, which is required for per-IP rate limiting.
+app.set("trust proxy", 1);
+
 // =========================
-// CORS: SUPPORT MULTIPLE ORIGINS
+// SECURITY MIDDLEWARE
 // =========================
-// FIX: FRONTEND_URL can now be a comma-separated list, e.g.
-// FRONTEND_URL=http://localhost:5173,https://suman-food.vercel.app
-// Falls back to localhost only if nothing is set (dev default).
-const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:", "blob:"],
+        fontSrc: ["'self'"],
+        connectSrc: ["'self'", "https:", "wss:"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  })
+);
+
+app.use(apiRateLimiter);
 
 const corsOriginCheck = (
   origin: string | undefined,
-  callback: (err: Error | null, allow?: boolean) => void,
+  callback: (err: Error | null, allow?: boolean) => void
 ) => {
-  // Allow non-browser requests (curl, server-to-server, health checks) with no Origin header
   if (!origin) return callback(null, true);
-
   if (allowedOrigins.includes(origin)) {
     return callback(null, true);
   }
-
-  console.warn(`❌ Blocked by CORS: ${origin}`);
+  logger.warn({ origin }, "CORS blocked origin");
   return callback(new Error("Not allowed by CORS"));
 };
 
@@ -64,7 +130,7 @@ const corsOriginCheck = (
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {
   cors: {
-    origin: allowedOrigins, // FIX: was a single string, now supports the full list
+    origin: allowedOrigins,
     credentials: true,
   },
 });
@@ -76,22 +142,45 @@ setupTrackingSocket(io);
 // =========================
 app.use(
   cors({
-    origin: corsOriginCheck, // FIX: was a single hardcoded origin, now checks against the list
+    origin: corsOriginCheck,
     credentials: true,
-  }),
+  })
 );
 
 // Stripe webhook MUST be before express.json() — needs raw body
 app.post(
   "/api/v1/order/webhook",
   bodyParser.raw({ type: "application/json" }),
-  stripeWebhook,
+  stripeWebhook
 );
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
+app.use(sanitizeBody);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Request logging
+app.use((req: Request, _res: Response, next) => {
+  const start = Date.now();
+  const requestId = Math.random().toString(36).substring(7);
+  (req as any).requestId = requestId;
+
+  logger.info(
+    { method: req.method, path: req.path, ip: req.ip, requestId },
+    "Incoming request"
+  );
+
+  _res.on("finish", () => {
+    const duration = Date.now() - start;
+    logger.info(
+      { method: req.method, path: req.path, statusCode: _res.statusCode, duration, requestId },
+      "Request completed"
+    );
+  });
+
+  next();
+});
 
 // =========================
 // ROUTES
@@ -106,8 +195,28 @@ app.use("/api/v1/map", mapRoute);
 // =========================
 // HEALTH CHECK
 // =========================
-app.get("/health", (_req: Request, res: Response) => {
-  res.status(200).json({ status: "OK", message: "Server is running" });
+app.get("/health", async (_req: Request, res: Response) => {
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = dbState === 1 ? "connected" : dbState === 2 ? "connecting" : "disconnected";
+
+  if (dbState !== 1) {
+    return res.status(503).json({
+      status: "DEGRADED",
+      message: "Database not connected",
+      database: dbStatus,
+    });
+  }
+
+  const transactions = await getTransactionSupport();
+
+  res.status(200).json({
+    status: "OK",
+    message: "Server is running",
+    database: dbStatus,
+    transactions,
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+  });
 });
 
 // =========================
@@ -120,11 +229,17 @@ app.use((_req: Request, res: Response) => {
 // =========================
 // ERROR HANDLER
 // =========================
-app.use((err: any, _req: Request, res: Response, _next: any) => {
-  console.error(err.stack);
-  res
-    .status(500)
-    .json({ success: false, message: err.message || "Internal Server Error" });
+app.use((err: any, req: Request, res: Response, _next: any) => {
+  logger.error(
+    { err: err.message, stack: err.stack, path: req.path, method: req.method },
+    "Unhandled error"
+  );
+
+  if (err instanceof SyntaxError && "status" in err && err.status === 400 && "body" in err) {
+    return res.status(400).json({ success: false, message: "Invalid JSON payload" });
+  }
+
+  res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
 // =========================
@@ -135,19 +250,18 @@ const startServer = async () => {
     await connectDB();
 
     const server = httpServer.listen(PORT, () => {
-      console.log(`✅ Server running on port ${PORT}`);
-      console.log(`✅ Socket.IO ready for live tracking`);
-      console.log(`✅ Allowed origins: ${allowedOrigins.join(", ")}`);
+      logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
     });
 
     const gracefulShutdown = (signal: string) => {
-      console.log(`\n${signal} received. Shutting down gracefully...`);
-      server.close(() => {
-        console.log("✅ Server closed.");
+      logger.info({ signal }, "Shutdown signal received");
+      server.close(async () => {
+        await mongoose.connection.close(false);
+        logger.info("Server closed, database connection closed");
         process.exit(0);
       });
       setTimeout(() => {
-        console.error("❌ Force shutdown after timeout.");
+        logger.error("Force shutdown timeout");
         process.exit(1);
       }, 10000);
     };
@@ -157,15 +271,14 @@ const startServer = async () => {
 
     server.on("error", (err: any) => {
       if (err.code === "EADDRINUSE") {
-        console.error(`\n❌ Port ${PORT} is already in use!`);
-        process.exit(1);
+        logger.error({ port: PORT }, "Port already in use");
       } else {
-        console.error("Server error:", err);
-        process.exit(1);
+        logger.error({ err }, "Server error");
       }
+      process.exit(1);
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    logger.error({ err: error }, "Failed to start server");
     process.exit(1);
   }
 };

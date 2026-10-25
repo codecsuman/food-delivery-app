@@ -7,26 +7,42 @@ import {
   getOrderById,
   cancelOrder,
 } from "../controller/order.controller.js";
+import { checkoutRateLimiter } from "../middlewares/rateLimit.js";
+import { validate } from "../middlewares/validate.js";
+import {
+  checkoutSchema,
+  orderIdParamSchema,
+  stripeSessionIdParamSchema,
+} from "../schemas/validation.js";
 
 const router = express.Router();
 
 // Get user's orders (protected)
 router.get("/", isAuthenticated, getOrders);
 
-// Get order by ID (protected)
-router.get("/:orderId", isAuthenticated, getOrderById);
-
-// Create Stripe checkout session (protected)
+// Create Stripe checkout session (protected) - with rate limiting and validation
 router.post(
   "/checkout/create-checkout-session",
   isAuthenticated,
-  createCheckoutSession,
+  checkoutRateLimiter,
+  validate(checkoutSchema),
+  createCheckoutSession
 );
 
 // Get order by Stripe session ID (protected)
-router.get("/session/:sessionId", isAuthenticated, getOrderBySessionId);
+// IMPORTANT: this must be declared BEFORE `/:orderId`, otherwise Express
+// matches "session" as the orderId and the request always fails validation.
+router.get(
+  "/session/:sessionId",
+  isAuthenticated,
+  validate(stripeSessionIdParamSchema, "params"),
+  getOrderBySessionId
+);
+
+// Get order by ID (protected)
+router.get("/:orderId", isAuthenticated, validate(orderIdParamSchema, "params"), getOrderById);
 
 // Cancel order (protected)
-router.post("/:orderId/cancel", isAuthenticated, cancelOrder);
+router.post("/:orderId/cancel", isAuthenticated, validate(orderIdParamSchema, "params"), cancelOrder);
 
 export default router;

@@ -18,41 +18,74 @@ const DeliveryTimeEstimator = ({ restaurantId, customerCoords }: DeliveryTimeEst
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // BUG FIX: `customerCoords` is created inline by the parent, so it is a new
+  // object on every render. Depending on the object caused an infinite
+  // fetch → setState → re-render loop. Depend on its primitive values instead.
+  const customerAddress = customerCoords?.address ?? "";
+  const customerPincode = customerCoords?.pincode ?? "";
+  const customerLng = customerCoords?.coordinates?.[0];
+  const customerLat = customerCoords?.coordinates?.[1];
+  const hasCoordinates =
+    typeof customerLng === "number" &&
+    typeof customerLat === "number" &&
+    Number.isFinite(customerLng) &&
+    Number.isFinite(customerLat) &&
+    !(customerLng === 0 && customerLat === 0);
+
   useEffect(() => {
+    if (!restaurantId || !customerAddress || !customerPincode) {
+      setDeliveryInfo(null);
+      setError("");
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+
     const fetchDeliveryInfo = async () => {
+      setLoading(true);
+      setError("");
+      setDeliveryInfo(null);
+
       try {
-        // FIX: relative path → full backend URL, and added credentials:
-        // "include" so the auth cookie is sent (this route now requires
-        // isAuthenticated on the backend).
         const res = await fetch(`${API_BASE_URL}/map/check-delivery`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
+          signal: controller.signal,
           body: JSON.stringify({
             restaurantId,
-            customerAddress: customerCoords.address,
-            customerPincode: customerCoords.pincode,
+            customerAddress,
+            customerPincode,
+            // Send the exact pin so the ETA matches the customer's selection
+            // instead of a geocoder's approximation of the address text.
+            ...(hasCoordinates ? { lat: customerLat, lng: customerLng } : {}),
           }),
         });
         const data = await res.json();
+        if (!active) return;
+
         if (data.success) {
           setDeliveryInfo(data);
         } else {
           setError(data.message || "Failed to check delivery");
         }
-      } catch (err) {
-        console.error(err);
+      } catch (err: any) {
+        if (!active || err?.name === "AbortError") return;
         setError("Network error. Please try again.");
+      } finally {
+        if (active) setLoading(false);
       }
-      setLoading(false);
     };
 
-    if (customerCoords?.address && customerCoords?.pincode) {
-      fetchDeliveryInfo();
-    } else {
-      setLoading(false);
-    }
-  }, [restaurantId, customerCoords]);
+    fetchDeliveryInfo();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [restaurantId, customerAddress, customerPincode, customerLng, customerLat, hasCoordinates]);
 
   if (loading) {
     return (
