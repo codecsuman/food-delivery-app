@@ -56,3 +56,17 @@ coverage
 # Temporary files
 *.tmp
 *.temp
+
+# ==========================================
+# INTERNAL / ROOT-ONLY FILES - NEVER PUSH
+# Only client/, server/, .gitignore and README.md belong in this repo.
+# ==========================================
+/.bug-reports/
+/.project-docs/
+/.project-tracker/
+/.github/
+/DEPLOYMENT.md
+/SECURITY_REPORT.md
+/quick-start.bat
+/start-dev.bat
+/nodemon.json
