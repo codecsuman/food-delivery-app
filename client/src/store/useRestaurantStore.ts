@@ -1,6 +1,7 @@
 import { Orders } from "@/types/orderType";
 import { MenuItem, RestaurantState } from "@/types/restaurantType";
 import { isValidObjectId } from "@/lib/validation";
+import { findUnpersistedFields } from "@/lib/persistence";
 import axios from "axios";
 import { toast } from "sonner";
 import { create } from "zustand";
@@ -20,6 +21,50 @@ const getErrorMessage = (error: any): string => {
     error?.message ||
     "Something went wrong. Please try again."
   );
+};
+
+/**
+ * Text fields that the API echoes back on create/update. Coordinates live in
+ * `location.coordinates`, cuisines are JSON, and the banner is a file, so those
+ * are verified by the server tests instead of this literal comparison.
+ */
+const RESTAURANT_PERSISTED_FIELDS = [
+  "restaurantName",
+  "address",
+  "city",
+  "state",
+  "country",
+  "pincode",
+  "contact",
+  "alternateContact",
+  "deliveryTime",
+  "deliveryPrice",
+] as const;
+
+const restaurantSnapshot = (formData: FormData): Record<string, unknown> => {
+  const snapshot: Record<string, unknown> = {};
+  for (const key of RESTAURANT_PERSISTED_FIELDS) {
+    const value = formData.get(key);
+    if (value !== null) snapshot[key] = value;
+  }
+  return snapshot;
+};
+
+const warnAboutUnpersistedRestaurantFields = (
+  formData: FormData,
+  saved: unknown,
+) => {
+  const missing = findUnpersistedFields(
+    restaurantSnapshot(formData),
+    (saved ?? {}) as Record<string, unknown>,
+  );
+  if (missing.length > 0) {
+    toast.error(
+      `The server did not save: ${missing.join(", ")}. The deployed backend is probably out of date — redeploy it and try again.`,
+    );
+    return true;
+  }
+  return false;
 };
 
 export const useRestaurantStore = create<RestaurantState>()(
@@ -46,8 +91,12 @@ export const useRestaurantStore = create<RestaurantState>()(
             headers: { "Content-Type": "multipart/form-data" },
           });
           if (response.data.success) {
-            toast.success(response.data.message);
             set({ restaurant: response.data.restaurant });
+            const notPersisted = warnAboutUnpersistedRestaurantFields(
+              formData,
+              response.data.restaurant,
+            );
+            if (!notPersisted) toast.success(response.data.message);
           }
         } catch (error: any) {
           toast.error(getErrorMessage(error));
@@ -86,8 +135,12 @@ export const useRestaurantStore = create<RestaurantState>()(
             headers: { "Content-Type": "multipart/form-data" },
           });
           if (response.data.success) {
-            toast.success(response.data.message);
             set({ restaurant: response.data.restaurant });
+            const notPersisted = warnAboutUnpersistedRestaurantFields(
+              formData,
+              response.data.restaurant,
+            );
+            if (!notPersisted) toast.success(response.data.message);
           }
         } catch (error: any) {
           toast.error(getErrorMessage(error));

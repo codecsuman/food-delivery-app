@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import axios from "axios";
 import { LoginInputState, SignupInputState } from "@/schema/userSchema";
+import { findUnpersistedFields } from "@/lib/persistence";
 import { toast } from "sonner";
 
 const API_END_POINT = `${import.meta.env.VITE_API_BASE_URL}/user`;
@@ -62,6 +63,24 @@ const getErrorMessage = (error: any): string => {
     error?.message ||
     "Something went wrong. Please try again."
   );
+};
+
+/**
+ * Build the subset of profile fields that should come back unchanged from the
+ * API. The avatar is excluded because Cloudinary replaces a data URI with a
+ * hosted URL, so a literal comparison would always fail.
+ */
+const profileSnapshot = (input: ProfileUpdateInput): Record<string, unknown> => {
+  const snapshot: Record<string, unknown> = {};
+  for (const key of Object.keys(input) as (keyof ProfileUpdateInput)[]) {
+    if (key === "profilePicture") continue;
+    const value = input[key];
+    snapshot[key] =
+      key === "email" && typeof value === "string"
+        ? value.trim().toLowerCase()
+        : value;
+  }
+  return snapshot;
 };
 
 export const useUserStore = create<UserState>()(
@@ -168,8 +187,21 @@ export const useUserStore = create<UserState>()(
             },
           );
           if (response.data.success) {
+            const updatedUser = response.data.user;
+            set({ user: updatedUser });
+
+            const missing = findUnpersistedFields(
+              profileSnapshot(input),
+              updatedUser,
+            );
+            if (missing.length > 0) {
+              toast.error(
+                `The server did not save: ${missing.join(", ")}. The deployed backend is probably out of date — redeploy it and try again.`,
+              );
+              return false;
+            }
+
             toast.success(response.data.message);
-            set({ user: response.data.user });
             return true;
           }
           return false;
