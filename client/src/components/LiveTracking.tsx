@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { io, Socket } from "socket.io-client";
-import { Truck, Clock, MapPin, Navigation, Package, ChefHat, CheckCircle2, CircleDot, AlertCircle } from "lucide-react";
+import { Truck, Clock, MapPin, Navigation, Package, ChefHat, CheckCircle2, CircleDot, AlertCircle, Phone, Store } from "lucide-react";
 
 // Fix Leaflet default marker icon
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -65,6 +65,19 @@ const DRIVER_ICON = L.divIcon({
   iconAnchor: [22, 22],
 });
 
+interface TrackingSnapshotPayload {
+  location?: { lat: number; lng: number };
+  status?: string;
+  eta?: number | null;
+  distanceRemaining?: number | null;
+  timestamp?: string;
+}
+
+interface OrderStatusPayload {
+  status?: string;
+  cancellationReason?: string | null;
+}
+
 interface LiveTrackingProps {
   orderId: string;
   restaurantCoords?: [number, number] | null;
@@ -76,6 +89,9 @@ interface LiveTrackingProps {
   initialEta?: number | null;
   initialDistanceRemaining?: number | null;
   initialLocationAt?: string | Date | null;
+  restaurantName?: string;
+  restaurantContact?: number | null;
+  initialCancellationReason?: string | null;
 }
 
 const STATUS_CONFIG: Record<string, {
@@ -147,6 +163,9 @@ const LiveTracking = ({
   initialEta = null,
   initialDistanceRemaining = null,
   initialLocationAt = null,
+  restaurantName,
+  restaurantContact = null,
+  initialCancellationReason = null,
 }: LiveTrackingProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -181,6 +200,9 @@ const LiveTracking = ({
   const [eta, setEta] = useState<number | null>(initialEta);
   const [distanceRemaining, setDistanceRemaining] = useState<number | null>(initialDistanceRemaining);
   const [status, setStatus] = useState(initialStatus);
+  const [cancellationReason, setCancellationReason] = useState<string | null>(
+    initialCancellationReason,
+  );
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(() => {
     if (!initialLocationAt) return null;
@@ -425,6 +447,10 @@ const LiveTracking = ({
   }, [initialStatus]);
 
   useEffect(() => {
+    setCancellationReason(initialCancellationReason);
+  }, [initialCancellationReason]);
+
+  useEffect(() => {
     // While the socket is connected it pushes ETAs more frequently than the
     // 10s poll; once it disconnects, let the polled order take over again.
     if (isConnected && receivedLiveDriverRef.current) return;
@@ -460,7 +486,7 @@ const LiveTracking = ({
     });
     socket.current = activeSocket;
 
-    const handleSnapshot = (data: any) => {
+    const handleSnapshot = (data: TrackingSnapshotPayload) => {
       if (data?.location) {
         applyDriverLocation(
           [data.location.lng, data.location.lat],
@@ -490,6 +516,10 @@ const LiveTracking = ({
     // Sent immediately by the server when the customer joins the room.
     activeSocket.on("tracking:snapshot", handleSnapshot);
     activeSocket.on("location:update", handleSnapshot);
+    activeSocket.on("order:status", (data: OrderStatusPayload) => {
+      if (data?.status) setStatus(data.status);
+      if (data?.cancellationReason) setCancellationReason(data.cancellationReason);
+    });
 
     activeSocket.on("connect_error", () => {
       setIsConnected(false);
@@ -556,7 +586,9 @@ const LiveTracking = ({
                 {currentStatus.label}
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                {currentStatus.description}
+                {status === "cancelled" && cancellationReason
+                  ? cancellationReason
+                  : currentStatus.description}
               </p>
             </div>
           </div>
@@ -665,6 +697,29 @@ const LiveTracking = ({
                 {status.replace(/([A-Z])/g, " $1").trim()}
               </span>
             </div>
+            {(restaurantName || restaurantContact) && (
+              <div className="flex justify-between gap-4 py-2 border-b border-gray-100 dark:border-gray-700">
+                <span className="text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                  <Store className="w-3.5 h-3.5" />
+                  Restaurant
+                </span>
+                <span className="font-medium text-gray-900 dark:text-white text-right">
+                  {restaurantName || "Restaurant"}
+                  {restaurantContact ? (
+                    <>
+                      {" · "}
+                      <a
+                        href={`tel:${restaurantContact}`}
+                        className="text-orange-600 dark:text-orange-400 hover:underline inline-flex items-center gap-1"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        {restaurantContact}
+                      </a>
+                    </>
+                  ) : null}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
               <span className="text-gray-500 dark:text-gray-400">Last location update</span>
               <span className="font-medium text-gray-900 dark:text-white">

@@ -73,6 +73,7 @@ import { logger } from "./utils/logger.js";
 import { getTransactionSupport } from "./utils/transactions.js";
 import { apiRateLimiter } from "./middlewares/rateLimit.js";
 import { sanitizeBody } from "./middlewares/validate.js";
+import { startAutoCancelJob } from "./services/autoCancelOrders.js";
 
 const app = express();
 const PORT = process.env.PORT || 8001;
@@ -249,12 +250,31 @@ const startServer = async () => {
   try {
     await connectDB();
 
+    // Restart-safe worker: every tick queries MongoDB for overdue orders, so a
+    // deploy/crash does not lose or duplicate cancellations. Emitting to the
+    // customer tracking room and the restaurant room keeps both views live.
+    const stopAutoCancelJob = startAutoCancelJob((order) => {
+      const payload = {
+        orderId: order._id.toString(),
+        restaurantId: order.restaurant.toString(),
+        status: order.status,
+        cancellationReason: order.cancellationReason,
+        cancelledAt: order.cancelledAt,
+        cancelledBy: order.cancelledBy,
+        refundStatus: order.refundStatus,
+      };
+
+      io.to(`order:${order._id}`).emit("order:status", payload);
+      io.to(`restaurant:${order.restaurant}`).emit("order:status", payload);
+    });
+
     const server = httpServer.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
     });
 
     const gracefulShutdown = (signal: string) => {
       logger.info({ signal }, "Shutdown signal received");
+      stopAutoCancelJob();
       server.close(async () => {
         await mongoose.connection.close(false);
         logger.info("Server closed, database connection closed");

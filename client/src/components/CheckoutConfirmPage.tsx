@@ -1,4 +1,4 @@
-import { Dispatch, FormEvent, SetStateAction, useState, useEffect } from "react";
+import { Dispatch, FormEvent, SetStateAction, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -11,9 +11,9 @@ import { CheckoutSessionRequest } from "@/types/orderType";
 import { useCartStore } from "@/store/useCartStore";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { useOrderStore } from "@/store/useOrderStore";
-import { Loader2, MapPin, CreditCard, Banknote, Navigation } from "lucide-react";
+import { Loader2, MapPin, CreditCard, Banknote, Navigation, Phone, Store } from "lucide-react";
 import AddressPicker from "./AddressPicker";
-import DeliveryTimeEstimator from "./DeliveryTimeEstimator";
+import DeliveryTimeEstimator, { DeliveryQuote } from "./DeliveryTimeEstimator";
 
 const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -43,6 +43,15 @@ const isValidCoordinates = (coords?: readonly number[] | null): coords is [numbe
   return !(lng === 0 && lat === 0);
 };
 
+const createIdempotencyKey = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+};
+
 const CheckoutConfirmPage = ({
   open, setOpen,
 }: {
@@ -57,6 +66,14 @@ const CheckoutConfirmPage = ({
   const [useAddressPicker, setUseAddressPicker] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState<SelectedAddress | null>(null);
   const [resolvingAddress, setResolvingAddress] = useState(false);
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  // Reused while the customer retries the same submission, regenerated when
+  // the cart/address/payment method changes. This is what turns a double-click
+  // or a network retry into one server-side order instead of two.
+  const idempotencyRef = useRef<{ fingerprint: string; key: string }>({
+    fingerprint: "",
+    key: "",
+  });
 
   const [input, setInput] = useState({
     name: "", email: "", address: "", city: "", country: "", pincode: "",
@@ -95,7 +112,19 @@ const CheckoutConfirmPage = ({
     (acc, item) => acc + item.price * item.quantity,
     0,
   );
-  const total = subtotal + deliveryPrice;
+  // Show the same distance-based fee the server will charge. Until an address
+  // has been resolved, the restaurant's base fee is shown as an estimate.
+  const quotedDeliveryFee = deliveryQuote?.deliveryFee;
+  const deliveryFee =
+    typeof quotedDeliveryFee === "number" ? quotedDeliveryFee : deliveryPrice;
+  const extraDeliveryFee =
+    deliveryQuote && deliveryQuote.extraFee && deliveryQuote.extraFee > 0
+      ? deliveryQuote.extraFee
+      : 0;
+  const total = subtotal + deliveryFee;
+  const addressMatchesSelection =
+    !!selectedAddress &&
+    normalizeAddress(selectedAddress.address) === normalizeAddress(input.address);
 
   useEffect(() => {
     if (!user || !open) return;
@@ -111,6 +140,7 @@ const CheckoutConfirmPage = ({
 
     setInput(profileInput);
     setSelectedAddress(null);
+    setDeliveryQuote(null);
 
     const stored = localStorage.getItem("selectedAddress");
     if (!stored) return;
@@ -141,6 +171,12 @@ const CheckoutConfirmPage = ({
     }
   }, [user, open]);
 
+  // A quote belongs to one address. Drop it as soon as the text no longer
+  // matches the selected pin so an old distance/fee is never displayed.
+  useEffect(() => {
+    if (!addressMatchesSelection) setDeliveryQuote(null);
+  }, [addressMatchesSelection]);
+
   const changeEventHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setInput((prev) => ({ ...prev, [name]: value }));
@@ -150,6 +186,7 @@ const CheckoutConfirmPage = ({
     // pairing a new address with an old lat/lng.
     if (name === "address" || name === "pincode") {
       setSelectedAddress(null);
+      setDeliveryQuote(null);
     }
   };
 
@@ -165,13 +202,14 @@ const CheckoutConfirmPage = ({
     const saved: SelectedAddress = { ...data, savedAt: Date.now() };
     setSelectedAddress(saved);
     localStorage.setItem("selectedAddress", JSON.stringify(saved));
+    setDeliveryQuote(null);
 
     setInput((prev) => ({
       ...prev,
       address: data.address,
-      city: data.city || prev.city,
-      country: data.country || prev.country,
-      pincode: data.pincode || prev.pincode,
+      city: data.city || "",
+      country: data.country || "",
+      pincode: data.pincode || "",
     }));
     setUseAddressPicker(false);
   };
@@ -286,6 +324,27 @@ const CheckoutConfirmPage = ({
     }
 
     try {
+      const fingerprint = JSON.stringify({
+        restaurantId: cartRestaurantId,
+        paymentMethod,
+        cart: cart.map((item) => ({
+          menuId: item._id,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        address: normalizeAddress(resolvedAddress.address || input.address),
+        pincode: resolvedAddress.pincode,
+        lat: resolvedAddress.coordinates[1],
+        lng: resolvedAddress.coordinates[0],
+      });
+
+      if (idempotencyRef.current.fingerprint !== fingerprint) {
+        idempotencyRef.current = {
+          fingerprint,
+          key: createIdempotencyKey(),
+        };
+      }
+
       const checkoutData: CheckoutSessionRequest = {
         cartItems: cart.map((cartItem) => ({
           menuId: cartItem._id, name: cartItem.name, image: cartItem.image,
@@ -296,11 +355,14 @@ const CheckoutConfirmPage = ({
           email: input.email,
           address: resolvedAddress.address || input.address,
           city,
+          country: input.country || resolvedAddress.country || user?.country || "",
+          state: resolvedAddress.state || user?.state || "",
           pincode: resolvedAddress.pincode,
           lat: resolvedAddress.coordinates[1], // [lng, lat] -> lat
           lng: resolvedAddress.coordinates[0], // [lng, lat] -> lng
         },
         restaurantId: cartRestaurantId,
+        idempotencyKey: idempotencyRef.current.key,
       };
       await createCheckoutSession(checkoutData, paymentMethod);
     } catch {
@@ -326,6 +388,31 @@ const CheckoutConfirmPage = ({
         {/* Order Summary */}
         <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4 mb-2 border border-gray-100 dark:border-gray-700">
           <h3 className="font-semibold text-sm uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Order Summary</h3>
+          {checkoutRestaurant && (
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+              <span className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+                <Store className="w-3.5 h-3.5 text-orange-500" />
+                {checkoutRestaurant.restaurantName}
+              </span>
+              {checkoutRestaurant.contact ? (
+                <a
+                  href={`tel:${checkoutRestaurant.contact}`}
+                  className="flex items-center gap-1.5 text-orange-600 dark:text-orange-400 hover:underline"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  {checkoutRestaurant.contact}
+                </a>
+              ) : null}
+              {checkoutRestaurant.address ? (
+                <span className="flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                  {[checkoutRestaurant.address, checkoutRestaurant.city, checkoutRestaurant.pincode]
+                    .filter(Boolean)
+                    .join(", ")}
+                </span>
+              ) : null}
+            </div>
+          )}
           <div className="space-y-2">
             {cart.map((item) => (
               <div key={item._id} className="flex justify-between text-sm">
@@ -340,8 +427,22 @@ const CheckoutConfirmPage = ({
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Delivery</span>
-                <span className="text-gray-700 dark:text-gray-300">₹{deliveryPrice}</span>
+                <span className="text-gray-700 dark:text-gray-300">₹{deliveryFee}</span>
               </div>
+              {extraDeliveryFee > 0 && (
+                <div className="flex justify-between text-xs text-amber-600 dark:text-amber-400">
+                  <span>
+                    Includes distance surcharge ({deliveryQuote?.extraDistanceKm} km beyond{" "}
+                    {deliveryQuote?.standardRadiusKm} km)
+                  </span>
+                  <span>₹{extraDeliveryFee}</span>
+                </div>
+              )}
+              {!deliveryQuote && (
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  Delivery fee is confirmed from your address before payment.
+                </p>
+              )}
               <div className="flex justify-between font-bold text-lg mt-2 pt-2.5 border-t border-gray-200 dark:border-gray-600">
                 <span className="text-gray-900 dark:text-white">Total</span>
                 <span className="bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent">₹{total}</span>
@@ -356,17 +457,17 @@ const CheckoutConfirmPage = ({
         </div>
 
         {/* Delivery Time Estimator — only while the pin still matches the text */}
-        {selectedAddress &&
-          normalizeAddress(selectedAddress.address) === normalizeAddress(input.address) &&
+        {addressMatchesSelection &&
           cartRestaurantId && (
           <div className="mb-4">
             <DeliveryTimeEstimator
               restaurantId={cartRestaurantId}
               customerCoords={{
-                address: selectedAddress.address,
-                pincode: selectedAddress.pincode,
-                coordinates: selectedAddress.coordinates,
+                address: selectedAddress!.address,
+                pincode: selectedAddress!.pincode,
+                coordinates: selectedAddress!.coordinates,
               }}
+              onQuote={setDeliveryQuote}
             />
           </div>
         )}

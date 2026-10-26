@@ -175,6 +175,35 @@ export const setupTrackingSocket = (io: Server) => {
       }
     });
 
+    // ========== RESTAURANT OWNER JOIN ==========
+    // Owners subscribe to their restaurant's room so status changes (including
+    // auto-cancellations) appear live on the dashboard.
+    socket.on("restaurant:join", async ({ restaurantId }: { restaurantId: string }) => {
+      try {
+        if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+          socket.emit("error", { message: "Invalid restaurant ID" });
+          return;
+        }
+
+        const { Restaurant } = await import("../models/restaurant.model.js");
+        const ownsRestaurant = await Restaurant.exists({
+          _id: restaurantId,
+          user: userId,
+        });
+
+        if (!ownsRestaurant) {
+          socket.emit("error", { message: "Not authorized for this restaurant" });
+          return;
+        }
+
+        socket.join(`restaurant:${restaurantId}`);
+        logger.info({ userId, restaurantId }, "Restaurant owner joined room");
+      } catch (error) {
+        logger.error({ err: error, userId }, "Restaurant join error");
+        socket.emit("error", { message: "Failed to join restaurant" });
+      }
+    });
+
     // ========== DRIVER LOCATION UPDATE ==========
     socket.on(
       "driver:location",

@@ -18,6 +18,8 @@ type User = {
   city: string;
   state: string;
   country: string;
+  latitude: number | null;
+  longitude: number | null;
   profilePicture: string;
   admin: boolean;
   isVerified: boolean;
@@ -35,6 +37,8 @@ type ProfileUpdateInput = {
   city?: string;
   state?: string;
   country?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   profilePicture?: string;
 };
 

@@ -76,9 +76,18 @@ const AddressPicker = ({
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [validated, setValidated] = useState(false);
   const [pincodeLoading, setPincodeLoading] = useState(false);
+  // City/state/country returned by reverse-geocoding the current pin. Used as
+  // the fallback when the pincode lookup cannot verify the postcode, so the
+  // parent form still receives consistent location data.
+  const [reversedLocation, setReversedLocation] = useState<{
+    city?: string;
+    state?: string;
+    country?: string;
+  }>({});
   const [pincodeData, setPincodeData] = useState<{
     city?: string;
     district?: string;
@@ -116,13 +125,28 @@ const AddressPicker = ({
       data.pincode ||
       components.postcode ||
       (data.address ? extractPincode(data.address) : "");
-    if (foundPincode) setPincode(foundPincode);
+    // This pin is the new source of truth. If the reverse geocoder has no
+    // postcode for it, clear the old value rather than leaving a stale
+    // pincode from a previous location attached to the new GPS/map position.
+    setPincode(foundPincode || "");
+    setReversedLocation({
+      city:
+        components.city ||
+        components.town ||
+        components.village ||
+        components.municipality ||
+        components.county ||
+        "",
+      state: components.state || "",
+      country: components.country || "",
+    });
 
     // The map position is now the source of truth. Drop any city/state box
     // that was filled from a previously typed pincode so it cannot display
     // stale information for the new pin.
     setPincodeData(null);
     setValidated(false);
+    setWarning("");
     setError("");
   };
 
@@ -286,6 +310,7 @@ const AddressPicker = ({
     const value = e.target.value.replace(/\D/g, "").slice(0, 6);
     setPincode(value);
     setValidated(false);
+    setWarning("");
     setPincodeData(null);
 
     if (value.length === 6) {
@@ -335,7 +360,7 @@ const AddressPicker = ({
         setLocating(false);
       },
       (err) => {
-        setError(err.code === err.PERMISSION_DENIED
+        setError(err.code === 1
           ? "Location permission denied. Please enable in browser settings."
           : "Could not fetch location. Try again.");
         setLocating(false);
@@ -404,9 +429,21 @@ const AddressPicker = ({
     }
     const pickedPincode = result.components?.postcode || extractPincode(result.formatted);
     if (pickedPincode) setPincode(pickedPincode);
+    setReversedLocation({
+      city:
+        result.components?.city ||
+        result.components?.town ||
+        result.components?.village ||
+        result.components?.municipality ||
+        result.components?.county ||
+        "",
+      state: result.components?.state || "",
+      country: result.components?.country || "",
+    });
     setPincodeData(null);
     setSuggestions([]);
     setValidated(false);
+    setWarning("");
     setError("");
   };
 
@@ -419,6 +456,7 @@ const AddressPicker = ({
 
     setLoading(true);
     setError("");
+    setWarning("");
 
     try {
       const payload: Record<string, unknown> = { address, pincode };
@@ -443,14 +481,20 @@ const AddressPicker = ({
         return;
       }
 
-      // Handle pincode validation - now always valid=true, but may have warning
+      // A valid 6-digit pincode is never rejected because a third-party lookup
+      // says it cannot confirm it. `pincodeValid === false` is reserved for a
+      // malformed pincode, which the format check above already prevents.
       if (validateData.pincodeValid === false) {
-        setError(`Pincode mismatch! ${validateData.pincodeMessage}`);
+        setError(validateData.pincodeMessage || "Please check the pincode and try again.");
         setLoading(false);
         return;
       }
 
-      // Show warning if pincode differs from geocoded location
+      // Non-blocking review note (e.g. the detected pincode differs from the
+      // typed one). The customer stays in control and can correct the field.
+      if (validateData.pincodeMessage && validateData.pincodeMessage !== "Pincode verified") {
+        setWarning(validateData.pincodeMessage);
+      }
       if (validateData.suggestedPincode && validateData.suggestedPincode !== pincode) {
         console.warn(`Pincode warning: ${validateData.pincodeMessage}`);
       }
@@ -475,9 +519,9 @@ const AddressPicker = ({
         pincode,
         coordinates: chosenCoordinates,
         formattedAddress: validateData.formattedAddress || address,
-        city: validateData.city,
-        state: validateData.state,
-        country: validateData.country,
+        city: validateData.city || reversedLocation.city,
+        state: validateData.state || reversedLocation.state,
+        country: validateData.country || reversedLocation.country,
       });
     } catch {
       setError("Failed to validate address. Please try again.");
@@ -571,6 +615,11 @@ const AddressPicker = ({
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
+      {warning && !error && (
+        <p className="text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
+          {warning} You can correct the address or pincode above, then validate again.
+        </p>
+      )}
 
       {validated && (
         <div className="flex items-center gap-2 text-green-600 text-sm bg-green-50 dark:bg-green-500/10 px-3 py-2 rounded-lg">

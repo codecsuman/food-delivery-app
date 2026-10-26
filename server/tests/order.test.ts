@@ -11,6 +11,7 @@ import { Order } from "../models/order.model.js";
 import orderRoute from "../routes/order.route.js";
 import { stripeWebhook } from "../controller/order.controller.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
+import mapService from "../services/mapService.js";
 
 const createTestApp = () => {
   const app = express();
@@ -133,6 +134,255 @@ describe("Order and Payment Security Tests", () => {
       // Verify order was created with correct price (200, not 10)
       const order = await Order.findOne({ user: testUser._id }).sort({ createdAt: -1 });
       expect(order!.totalAmount).toBeGreaterThanOrEqual(200); // At least menu price
+    });
+  });
+
+  describe("Distance-based Delivery Pricing", () => {
+    it("stores the base fee once and the server-calculated total", async () => {
+      const res = await request(app)
+        .post("/api/v1/order/checkout/create-checkout-session")
+        .set("Cookie", [`token=${authToken}`])
+        .send({
+          cartItems: [
+            {
+              menuId: testMenu._id.toString(),
+              name: "Test Pizza",
+              image: "",
+              price: 200,
+              quantity: 1,
+            },
+          ],
+          deliveryDetails: {
+            name: "Test",
+            email: "test@test.com",
+            address: "123 St",
+            city: "Kolkata",
+            pincode: "700001",
+          },
+          restaurantId: testRestaurant._id.toString(),
+          paymentMethod: "cod",
+        });
+
+      expect(res.status).toBe(200);
+      const order = await Order.findOne({ user: testUser._id }).sort({
+        createdAt: -1,
+      });
+      expect(order!.subtotal).toBe(200);
+      expect(order!.deliveryBaseFee).toBe(50);
+      expect(order!.deliveryExtraFee).toBe(0);
+      expect(order!.deliveryFee).toBe(50);
+      expect(order!.totalAmount).toBe(250);
+      expect(order!.deliveryDistanceKm).toBe(5);
+      expect(order!.estimatedDeliveryMinutes).toBe(30);
+    });
+
+    it("adds ₹5 per km beyond 5 km instead of charging the base fee twice", async () => {
+      vi.mocked(mapService.checkDeliveryRange).mockResolvedValueOnce({
+        success: true,
+        deliverable: true,
+        withinRange: true,
+        distanceKm: 7,
+        estimatedMinutes: 21,
+        maxRadius: 10,
+      });
+
+      const res = await request(app)
+        .post("/api/v1/order/checkout/create-checkout-session")
+        .set("Cookie", [`token=${authToken}`])
+        .send({
+          cartItems: [
+            {
+              menuId: testMenu._id.toString(),
+              name: "Test Pizza",
+              image: "",
+              price: 200,
+              quantity: 1,
+            },
+          ],
+          deliveryDetails: {
+            name: "Test",
+            email: "test@test.com",
+            address: "123 St",
+            city: "Kolkata",
+            pincode: "700001",
+          },
+          restaurantId: testRestaurant._id.toString(),
+          paymentMethod: "cod",
+        });
+
+      expect(res.status).toBe(200);
+      const order = await Order.findOne({ user: testUser._id }).sort({
+        createdAt: -1,
+      });
+      expect(order!.deliveryBaseFee).toBe(50);
+      expect(order!.deliveryExtraFee).toBe(10);
+      expect(order!.deliveryFee).toBe(60);
+      expect(order!.totalAmount).toBe(260);
+    });
+
+    it("rejects orders beyond the maximum delivery radius", async () => {
+      vi.mocked(mapService.checkDeliveryRange).mockResolvedValueOnce({
+        success: true,
+        deliverable: false,
+        withinRange: false,
+        distanceKm: 12,
+        estimatedMinutes: 36,
+        maxRadius: 10,
+        message: "Sorry, we only deliver within 10 km. You're 12 km away.",
+      });
+
+      const res = await request(app)
+        .post("/api/v1/order/checkout/create-checkout-session")
+        .set("Cookie", [`token=${authToken}`])
+        .send({
+          cartItems: [
+            {
+              menuId: testMenu._id.toString(),
+              name: "Test Pizza",
+              image: "",
+              price: 200,
+              quantity: 1,
+            },
+          ],
+          deliveryDetails: {
+            name: "Test",
+            email: "test@test.com",
+            address: "123 St",
+            city: "Kolkata",
+            pincode: "700001",
+          },
+          restaurantId: testRestaurant._id.toString(),
+          paymentMethod: "cod",
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain("10 km");
+      expect(await Order.countDocuments({ user: testUser._id })).toBe(0);
+    });
+  });
+
+  describe("Checkout snapshots", () => {
+    it("freezes the selected delivery address and restaurant contact on the order", async () => {
+      testRestaurant.contact = 9876543210;
+      testRestaurant.alternateContact = 9123456780;
+      await testRestaurant.save();
+
+      const checkoutRes = await request(app)
+        .post("/api/v1/order/checkout/create-checkout-session")
+        .set("Cookie", [`token=${authToken}`])
+        .send({
+          cartItems: [
+            {
+              menuId: testMenu._id.toString(),
+              name: "Test Pizza",
+              image: "",
+              price: 200,
+              quantity: 1,
+            },
+          ],
+          deliveryDetails: {
+            name: "Test",
+            email: "test@test.com",
+            address: "42 Original Road",
+            city: "Kolkata",
+            state: "West Bengal",
+            country: "India",
+            pincode: "700001",
+            lat: 22.5726,
+            lng: 88.3639,
+          },
+          restaurantId: testRestaurant._id.toString(),
+          paymentMethod: "cod",
+        });
+
+      expect(checkoutRes.status).toBe(200);
+      const order = await Order.findOne({ user: testUser._id }).sort({
+        createdAt: -1,
+      });
+      expect(order!.restaurantName).toBe("Test Restaurant");
+      expect(order!.restaurantContact).toBe(9876543210);
+      expect(order!.restaurantAlternateContact).toBe(9123456780);
+      expect(order!.deliveryDetails.address).toBe("42 Original Road");
+      expect(order!.deliveryDetails.pincode).toBe("700001");
+      expect(order!.deliveryDetails.lat).toBe(22.5726);
+
+      // Editing the restaurant profile or the customer profile later must not
+      // rewrite the historical order.
+      testRestaurant.contact = 9999999999;
+      await testRestaurant.save();
+      testUser.address = "99 New Profile Road";
+      testUser.pincode = "700002";
+      await testUser.save();
+
+      const orderRes = await request(app)
+        .get(`/api/v1/order/${order!._id}`)
+        .set("Cookie", [`token=${authToken}`]);
+
+      expect(orderRes.status).toBe(200);
+      expect(orderRes.body.order.restaurantContact).toBe(9876543210);
+      expect(orderRes.body.order.deliveryDetails.address).toBe(
+        "42 Original Road",
+      );
+      expect(orderRes.body.order.deliveryDetails.pincode).toBe("700001");
+    });
+
+    it("does not expose the restaurant alternate phone to customers", async () => {
+      const customer = await User.create({
+        fullname: "Other Customer",
+        email: "customer@example.com",
+        password: await import("bcryptjs").then((b) =>
+          b.hash("password123", 10),
+        ),
+        isVerified: true,
+      });
+      const customerToken = jwt.sign(
+        {
+          userId: customer._id.toString(),
+          email: customer.email,
+          admin: false,
+        },
+        process.env.SECRET_KEY!,
+        { expiresIn: "7d" },
+      );
+
+      const order = await Order.create({
+        user: customer._id,
+        restaurant: testRestaurant._id,
+        deliveryDetails: {
+          name: "Other Customer",
+          email: customer.email,
+          address: "7 Customer Lane",
+          city: "Kolkata",
+          pincode: "700001",
+        },
+        cartItems: [
+          {
+            menuId: testMenu._id.toString(),
+            name: "Test Pizza",
+            image: "",
+            price: 200,
+            quantity: 1,
+          },
+        ],
+        restaurantName: "Test Restaurant",
+        restaurantContact: 9876543210,
+        restaurantAlternateContact: 9123456780,
+        totalAmount: 250,
+        status: "confirmed",
+        paymentMethod: "cod",
+      });
+
+      const res = await request(app)
+        .get(`/api/v1/order/${order._id}`)
+        .set("Cookie", [`token=${customerToken}`]);
+
+      expect(res.status).toBe(200);
+      expect(res.body.order.restaurantContact).toBe(9876543210);
+      expect(res.body.order.restaurantAlternateContact).toBeUndefined();
+      expect(
+        res.body.order.restaurant?.alternateContact,
+      ).toBeUndefined();
     });
   });
 

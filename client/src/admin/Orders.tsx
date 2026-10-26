@@ -1,7 +1,7 @@
 import { Label } from "@/components/ui/label";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { useEffect, useState } from "react";
-import { Loader2, PackageOpen, MapPin, Mail, Calendar } from "lucide-react";
+import { Loader2, PackageOpen, MapPin, Mail, Calendar, Phone, Store } from "lucide-react";
 
 const Orders = () => {
   const { restaurantOrder, getRestaurantOrders, updateRestaurantOrder, loading } =
@@ -185,7 +185,43 @@ const Orders = () => {
                         <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                         {order.createdAt ? formatDate(order.createdAt) : "N/A"}
                       </p>
+                      {order.restaurant && typeof order.restaurant === "object" && (
+                        <p className="flex items-center gap-2 flex-wrap">
+                          <Store className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                          <span>{order.restaurant.restaurantName}</span>
+                          {order.restaurant.contact && (
+                            <a
+                              href={`tel:${order.restaurant.contact}`}
+                              className="text-orange-600 dark:text-orange-400 hover:underline inline-flex items-center gap-1"
+                            >
+                              <Phone className="h-3.5 w-3.5" />
+                              {order.restaurant.contact}
+                            </a>
+                          )}
+                          {order.restaurant.alternateContact && (
+                            <span className="text-gray-500 dark:text-gray-400 inline-flex items-center gap-1">
+                              <Phone className="h-3.5 w-3.5" />
+                              Alt: {order.restaurant.alternateContact}
+                            </span>
+                          )}
+                        </p>
+                      )}
                     </div>
+
+                    {order.status === "cancelled" && order.cancellationReason && (
+                      <div className="mt-3 rounded-lg border border-red-100 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                        <p>{order.cancellationReason}</p>
+                        {order.cancelledAt && (
+                          <p className="mt-0.5 text-red-500/80 dark:text-red-400/80">
+                            {formatDate(order.cancelledAt)}
+                            {order.cancelledBy ? ` · ${order.cancelledBy}` : ""}
+                          </p>
+                        )}
+                        {order.refundStatus && order.refundStatus !== "not_applicable" && (
+                          <p className="mt-0.5">Refund: {order.refundStatus}</p>
+                        )}
+                      </div>
+                    )}
 
                     <p className="text-lg font-bold mt-3 bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent inline-block">
                       {formatPrice(order.totalAmount || 0)}

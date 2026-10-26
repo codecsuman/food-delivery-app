@@ -16,8 +16,13 @@ export type Restaurant = {
   _id: string;
   user: string;
   restaurantName: string;
+  address: string;
   city: string;
+  state: string;
   country: string;
+  pincode: string;
+  contact: number | null;
+  alternateContact: number | null;
   deliveryTime: number;
   deliveryPrice: number;
   estimatedDeliveryTime?: number;
@@ -25,6 +30,7 @@ export type Restaurant = {
   menus: MenuItem[];
   imageUrl: string;
   imagePublicId?: string;
+  location?: { type: "Point"; coordinates: [number, number] };
   rating?: number;
   ratingCount?: number;
 };

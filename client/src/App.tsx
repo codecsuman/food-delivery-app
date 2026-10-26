@@ -250,6 +250,11 @@ function LiveTrackingPage() {
         initialEta={order.currentEta ?? null}
         initialDistanceRemaining={order.currentDistance ?? null}
         initialLocationAt={initialLocationAt}
+        restaurantName={order.restaurantName || restaurant?.restaurantName}
+        restaurantContact={
+          order.restaurantContact ?? restaurant?.contact ?? null
+        }
+        initialCancellationReason={order.cancellationReason ?? null}
       />
     </div>
   );

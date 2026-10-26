@@ -5,6 +5,7 @@ import { Order } from "../models/order.model.js";
 import { logger } from "../utils/logger.js";
 import mongoose from "mongoose";
 import { isValidObjectId } from "../utils/objectId.js";
+import { refundOrderPayment } from "../services/orderRefunds.js";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["confirmed", "cancelled", "payment_failed"],
@@ -21,9 +22,13 @@ export const createRestaurant = async (req: Request, res: Response) => {
   try {
     const {
       restaurantName,
+      address,
       city,
+      state,
       country,
       pincode,
+      contact,
+      alternateContact,
       deliveryTime,
       deliveryPrice,
       cuisines,
@@ -69,9 +74,13 @@ export const createRestaurant = async (req: Request, res: Response) => {
     const restaurant = await Restaurant.create({
       user: req.id,
       restaurantName: restaurantName.trim(),
+      address: address.trim(),
       city: city.trim(),
+      state: state.trim(),
       country: country.trim(),
       pincode: pincode.trim(),
+      contact: Number(contact),
+      alternateContact: alternateContact ? Number(alternateContact) : null,
       deliveryTime: Number(deliveryTime),
       deliveryPrice: deliveryPrice ? Number(deliveryPrice) : 0,
       cuisines: parsedCuisines.map((c: string) => c.trim()),
@@ -155,6 +164,8 @@ export const getAllRestaurants = async (_req: Request, res: Response) => {
   try {
     const restaurants = await Restaurant.find()
       .populate("menus")
+      // Alternate contact is private to the owner.
+      .select("-alternateContact")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -175,9 +186,13 @@ export const updateRestaurant = async (req: Request, res: Response) => {
     const { id } = req.params;
     const {
       restaurantName,
+      address,
       city,
+      state,
       country,
       pincode,
+      contact,
+      alternateContact,
       deliveryTime,
       deliveryPrice,
       cuisines,
@@ -202,9 +217,17 @@ export const updateRestaurant = async (req: Request, res: Response) => {
 
     if (restaurantName !== undefined)
       restaurant.restaurantName = restaurantName.trim();
+    if (address !== undefined) restaurant.address = address.trim();
     if (city !== undefined) restaurant.city = city.trim();
+    if (state !== undefined) restaurant.state = state.trim();
     if (country !== undefined) restaurant.country = country.trim();
     if (pincode !== undefined) restaurant.pincode = pincode.trim();
+    if (contact !== undefined)
+      restaurant.contact = contact ? Number(contact) : null;
+    if (alternateContact !== undefined)
+      restaurant.alternateContact = alternateContact
+        ? Number(alternateContact)
+        : null;
     if (deliveryTime !== undefined)
       restaurant.deliveryTime = Number(deliveryTime);
     if (deliveryPrice !== undefined)
@@ -358,7 +381,10 @@ export const getRestaurantOrder = async (req: Request, res: Response) => {
 
     const [orders, totalCount] = await Promise.all([
       Order.find(filter)
-        .populate("restaurant", "restaurantName imageUrl")
+        .populate(
+          "restaurant",
+          "restaurantName imageUrl contact alternateContact address city state pincode location",
+        )
         .populate("user", "fullname email")
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -434,6 +460,14 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     const newStatus = status.toLowerCase();
     const allowedNextStatuses = STATUS_TRANSITIONS[currentStatus] || [];
 
+    if (newStatus === "cancelled" && currentStatus === "cancelled") {
+      return res.status(409).json({
+        success: false,
+        message: "This order is already cancelled",
+        currentStatus,
+      });
+    }
+
     if (
       !allowedNextStatuses.includes(newStatus) &&
       currentStatus !== newStatus
@@ -446,12 +480,66 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       });
     }
 
-    order.status = newStatus;
-    await order.save();
+    const isCancelling = newStatus === "cancelled";
+    const initialRefundStatus =
+      isCancelling &&
+      order.paymentMethod === "stripe" &&
+      order.paymentIntentId
+        ? "pending"
+        : "not_applicable";
+
+    // Conditional update: an auto-cancel worker (or another dashboard tab) may
+    // have changed the status since we read it. Losing that race is a conflict,
+    // never a silent overwrite.
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: order._id, status: currentStatus },
+      {
+        $set: {
+          status: newStatus,
+          ...(isCancelling
+            ? {
+                cancellationReason: "Cancelled by restaurant",
+                cancelledAt: new Date(),
+                cancelledBy: "restaurant",
+                refundStatus: initialRefundStatus,
+              }
+            : {}),
+        },
+      },
+      { new: true },
+    );
+
+    if (!updatedOrder) {
+      return res.status(409).json({
+        success: false,
+        message: "This order was updated by another request. Please refresh.",
+      });
+    }
+
+    if (initialRefundStatus === "pending") {
+      const outcome = await refundOrderPayment(
+        updatedOrder,
+        "requested_by_customer",
+      );
+
+      await Order.updateOne(
+        { _id: updatedOrder._id },
+        {
+          $set: {
+            refundStatus: outcome.status,
+            ...(outcome.refundId ? { refundId: outcome.refundId } : {}),
+          },
+        },
+      );
+
+      updatedOrder.refundStatus = outcome.status;
+      if (outcome.refundId) updatedOrder.refundId = outcome.refundId;
+    }
 
     return res.status(200).json({
       success: true,
-      status: order.status,
+      status: updatedOrder.status,
+      order: updatedOrder,
       message: "Order status updated successfully",
     });
   } catch {
@@ -556,7 +644,7 @@ export const searchRestaurant = async (req: Request, res: Response) => {
 
     const restaurants = await Restaurant.find(query)
       .populate({ path: "menus", select: "name description price image" })
-      .select("-imagePublicId")
+      .select("-imagePublicId -alternateContact")
       .sort({ createdAt: -1 });
 
     return res
@@ -602,10 +690,13 @@ export const getSingleRestaurant = async (req: Request, res: Response) => {
         .json({ success: false, message: "Invalid restaurant ID" });
     }
 
-    const restaurant = await Restaurant.findById(id).populate({
-      path: "menus",
-      options: { sort: { createdAt: -1 } },
-    });
+    const restaurant = await Restaurant.findById(id)
+      .populate({
+        path: "menus",
+        options: { sort: { createdAt: -1 } },
+      })
+      // Alternate contact is only exposed through owner-authorized endpoints.
+      .select("-alternateContact");
 
     if (!restaurant) {
       return res

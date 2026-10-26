@@ -11,11 +11,14 @@ export type CheckoutSessionRequest = {
     email: string;
     address: string;
     city: string;
+    state?: string;
+    country?: string;
     pincode?: string;
     lat?: number; // FIX: added — backend now accepts/stores this
     lng?: number; // FIX: added — backend now accepts/stores this
   };
   restaurantId: string;
+  idempotencyKey?: string;
 };
 
 // FIX: added — matches what getOrderById/getOrderBySessionId actually populate
@@ -24,6 +27,13 @@ export interface PopulatedRestaurant {
   restaurantName: string;
   imageUrl: string;
   user: string;
+  contact?: number | null;
+  alternateContact?: number | null;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
   location?: {
     type: "Point";
     coordinates: [number, number];
@@ -48,6 +58,8 @@ export interface Orders {
     name: string;
     address: string;
     city: string;
+    state?: string;
+    country?: string;
     pincode?: string;
     lat?: number; // FIX: added
     lng?: number; // FIX: added
@@ -59,10 +71,26 @@ export interface Orders {
     price: number;
     quantity: number;
   }[];
+  subtotal?: number;
+  deliveryFee?: number;
+  deliveryBaseFee?: number;
+  deliveryExtraFee?: number;
+  deliveryDistanceKm?: number;
+  estimatedDeliveryMinutes?: number;
   totalAmount: number;
   status: string;
   paymentIntentId?: string;
   paymentMethod?: "stripe" | "cod";
+  /** Historical contact snapshot captured at checkout. */
+  restaurantName?: string;
+  restaurantContact?: number | null;
+  restaurantAlternateContact?: number | null;
+  idempotencyKey?: string;
+  cancellationReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: "customer" | "restaurant" | "system";
+  refundStatus?: "not_applicable" | "pending" | "refunded" | "failed";
+  refundId?: string;
   currentEta?: number; // FIX: added — written by trackingSocket.ts
   currentDistance?: number; // FIX: added — written by trackingSocket.ts
   /** Latest known driver position, [lng, lat] — persisted by trackingSocket.ts */

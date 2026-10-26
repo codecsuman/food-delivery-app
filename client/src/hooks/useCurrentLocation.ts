@@ -117,7 +117,7 @@ export const useCurrentLocation = (): UseCurrentLocationReturn => {
       };
     } catch (err: any) {
       const message = 
-        err.code === err.PERMISSION_DENIED
+        err.code === 1
           ? "Location permission denied. Please enable in browser settings."
           : err.message || "Could not fetch location. Please try again.";
       setError(message);

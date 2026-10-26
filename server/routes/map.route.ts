@@ -208,7 +208,9 @@ router.post(
 
       const deliveryCheck = await mapService.checkDeliveryRange(
         restaurant.location!.coordinates as [number, number],
-        customerCoordinates
+        customerCoordinates,
+        restaurant.deliveryPrice || 0,
+        restaurant.deliveryTime || 0,
       );
 
       res.json(deliveryCheck);

@@ -26,10 +26,13 @@ const DEFAULT_CENTER: [number, number] = [22.5726, 88.3639]; // Kolkata fallback
 const Restaurant = () => {
   const [input, setInput] = useState<RestaurantFormSchema>({
     restaurantName: "",
+    address: "",
     city: "",
     state: "",
     country: "",
     pincode: "",
+    contact: "",
+    alternateContact: "",
     deliveryTime: 0,
     deliveryPrice: 0,
     cuisines: [],
@@ -82,7 +85,7 @@ const Restaurant = () => {
         setErrors((prev) => ({
           ...prev,
           lat:
-            err.code === err.PERMISSION_DENIED
+            err.code === 1
               ? "Location permission denied. Drag the pin on the map instead."
               : "Could not fetch location. Drag the pin on the map instead.",
         }));
@@ -123,10 +126,13 @@ const Restaurant = () => {
 
         setInput((prev) => ({
           ...prev,
-          pincode: pincode || prev.pincode,
-          city: city || prev.city,
-          state: state || prev.state,
-          country: country || prev.country,
+          // The new pin is authoritative: if reverse geocoding has no value
+          // for a field, clear it instead of pairing the new position with an
+          // old pincode/city/country.
+          pincode: pincode || "",
+          city: city || "",
+          state: state || "",
+          country: country || "",
         }));
       }
     } catch {
@@ -204,15 +210,21 @@ const Restaurant = () => {
 
     const formData = new FormData();
     formData.append("restaurantName", input.restaurantName);
+    formData.append("address", input.address);
     formData.append("city", input.city);
+    formData.append("state", input.state);
     formData.append("country", input.country);
     formData.append("pincode", input.pincode);
+    formData.append("contact", input.contact);
+    formData.append("alternateContact", input.alternateContact || "");
     formData.append("deliveryTime", input.deliveryTime.toString());
     formData.append("deliveryPrice", input.deliveryPrice.toString());
     formData.append("cuisines", JSON.stringify(input.cuisines));
     formData.append("lat", input.lat.toString());
     formData.append("lng", input.lng.toString());
 
+    // Banner last: multipart parsers read text fields before the file, so the
+    // image never races the validated fields.
     if (input.imageFile) {
       formData.append("imageFile", input.imageFile);
     }
@@ -244,10 +256,15 @@ const Restaurant = () => {
 
         setInput({
           restaurantName: fetchedRestaurant.restaurantName || "",
+          address: fetchedRestaurant.address || "",
           city: fetchedRestaurant.city || "",
-          state: (fetchedRestaurant as any).state || "",
+          state: fetchedRestaurant.state || "",
           country: fetchedRestaurant.country || "",
-          pincode: (fetchedRestaurant as any).pincode || "",
+          pincode: fetchedRestaurant.pincode || "",
+          contact: fetchedRestaurant.contact ? String(fetchedRestaurant.contact) : "",
+          alternateContact: fetchedRestaurant.alternateContact
+            ? String(fetchedRestaurant.alternateContact)
+            : "",
           deliveryTime: fetchedRestaurant.deliveryTime || 0,
           deliveryPrice: fetchedRestaurant.deliveryPrice || 0,
           cuisines: fetchedRestaurant.cuisines || [],
@@ -316,6 +333,26 @@ const Restaurant = () => {
               )}
             </div>
 
+            {/* Restaurant Address */}
+            <div className="space-y-2 md:col-span-2">
+              <Label className="text-gray-700 dark:text-gray-300 font-medium">
+                Restaurant Address
+              </Label>
+              <Input
+                type="text"
+                name="address"
+                value={input.address}
+                onChange={changeEventHandler}
+                placeholder="Building, street, area"
+                className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500"
+              />
+              {errors.address && (
+                <span className="text-xs text-red-500 font-medium">
+                  {errors.address}
+                </span>
+              )}
+            </div>
+
             {/* City */}
             <div className="space-y-2">
               <Label className="text-gray-700 dark:text-gray-300 font-medium">City</Label>
@@ -330,6 +367,24 @@ const Restaurant = () => {
               {errors.city && (
                 <span className="text-xs text-red-500 font-medium">
                   {errors.city}
+                </span>
+              )}
+            </div>
+
+            {/* State */}
+            <div className="space-y-2">
+              <Label className="text-gray-700 dark:text-gray-300 font-medium">State</Label>
+              <Input
+                type="text"
+                name="state"
+                value={input.state}
+                onChange={changeEventHandler}
+                placeholder="Enter state"
+                className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500"
+              />
+              {errors.state && (
+                <span className="text-xs text-red-500 font-medium">
+                  {errors.state}
                 </span>
               )}
             </div>
@@ -375,9 +430,9 @@ const Restaurant = () => {
                       if (data.success) {
                         setInput((prev) => ({
                           ...prev,
-                          city: data.city || prev.city,
-                          state: data.state || prev.state,
-                          country: data.country || prev.country,
+                          city: data.city || "",
+                          state: data.state || "",
+                          country: data.country || "",
                         }));
                       }
                     } catch (err) {
@@ -417,6 +472,48 @@ const Restaurant = () => {
                   )}
                 </Button>
               </div>
+            </div>
+
+            {/* Primary contact */}
+            <div className="space-y-2">
+              <Label className="text-gray-700 dark:text-gray-300 font-medium">
+                Primary Phone
+              </Label>
+              <Input
+                type="tel"
+                name="contact"
+                value={input.contact}
+                onChange={changeEventHandler}
+                placeholder="10-digit restaurant phone"
+                maxLength={10}
+                className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500"
+              />
+              {errors.contact && (
+                <span className="text-xs text-red-500 font-medium">
+                  {errors.contact}
+                </span>
+              )}
+            </div>
+
+            {/* Alternate contact */}
+            <div className="space-y-2">
+              <Label className="text-gray-700 dark:text-gray-300 font-medium">
+                Alternate Phone (Optional)
+              </Label>
+              <Input
+                type="tel"
+                name="alternateContact"
+                value={input.alternateContact}
+                onChange={changeEventHandler}
+                placeholder="Alternate 10-digit phone"
+                maxLength={10}
+                className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 rounded-lg focus-visible:ring-orange-500"
+              />
+              {errors.alternateContact && (
+                <span className="text-xs text-red-500 font-medium">
+                  {errors.alternateContact}
+                </span>
+              )}
             </div>
 
             {/* Delivery Time */}

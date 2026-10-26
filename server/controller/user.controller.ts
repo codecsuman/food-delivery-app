@@ -192,7 +192,7 @@ export const getProfile = async (req: Request, res: Response) => {
 export const updateProfile = async (req: Request, res: Response) => {
   try {
     const userId = req.id;
-    const { fullname, email, contact, alternateContact, address, pincode, city, state, country, profilePicture } =
+    const { fullname, email, contact, alternateContact, address, pincode, city, state, country, latitude, longitude, profilePicture } =
       req.body;
 
     const user = await User.findById(userId);
@@ -236,8 +236,21 @@ export const updateProfile = async (req: Request, res: Response) => {
     if (city !== undefined) updateData.city = city.trim();
     if (state !== undefined) updateData.state = state.trim();
     if (country !== undefined) updateData.country = country.trim();
+    if (latitude !== undefined)
+      updateData.latitude = latitude === null ? null : Number(latitude);
+    if (longitude !== undefined)
+      updateData.longitude = longitude === null ? null : Number(longitude);
 
-    if (profilePicture && typeof profilePicture === "string") {
+    if (profilePicture === "" || profilePicture === null) {
+      // Explicitly clearing the avatar. Remove the old asset when possible.
+      if (user.profilePicture) {
+        const oldPublicId = getPublicIdFromUrl(user.profilePicture);
+        if (oldPublicId) {
+          await deleteImage(oldPublicId);
+        }
+      }
+      updateData.profilePicture = "";
+    } else if (profilePicture && typeof profilePicture === "string") {
       const isDataUri = profilePicture.startsWith("data:image/");
       const isUrl = /^https?:\/\//.test(profilePicture);
 

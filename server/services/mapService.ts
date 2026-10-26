@@ -1,11 +1,14 @@
 import axios from "axios";
+import {
+  calculateDeliveryPricing,
+  DELIVERY_PREP_MINUTES,
+} from "./deliveryPricing.js";
 
 const OPENCAGE_KEY = process.env.OPENCAGE_API_KEY;
 const PINCODE_API_BASE = "https://api.pincodeapi.in/api/v1";
 const DELIVERY_SPEED = parseFloat(
   process.env.DELIVERY_SPEED_KM_PER_MIN || "0.333",
 );
-const MAX_RADIUS = parseFloat(process.env.MAX_DELIVERY_RADIUS_KM || "10");
 
 // Earth's radius in km for Haversine formula
 const EARTH_RADIUS_KM = 6371;
@@ -87,6 +90,12 @@ export interface DistanceTimeResult {
   estimatedTimeFormatted?: string;
   withinRange?: boolean;
   maxRadius?: number;
+  standardRadiusKm?: number;
+  chargePerExtraKm?: number;
+  baseFee?: number;
+  extraDistanceKm?: number;
+  extraFee?: number;
+  deliveryFee?: number;
   message?: string;
 }
 
@@ -228,13 +237,17 @@ class MapService {
     const pincodeData = await this.lookupPincode(pincode);
     
     if (!pincodeData.success) {
-      // If pincode API fails, fall back to coordinate-based validation
+      // The pincode API is a third-party service and is frequently rate
+      // limited/unavailable. A valid 6-digit format must not be rejected just
+      // because that service is down. If a pin/GPS position exists, verify
+      // against it (as a warning); otherwise accept the format and let the
+      // address geocoder/server validation decide.
       if (coordinates) {
         return this.validatePincodeWithCoordinates(pincode, coordinates);
       }
-      return { 
-        valid: false, 
-        message: pincodeData.message || "Invalid pincode" 
+      return {
+        valid: true,
+        message: `Pincode ${pincode} has a valid format, but it could not be verified online right now.`,
       };
     }
 
@@ -249,7 +262,7 @@ class MapService {
       if (distance > 15) {
         return {
           valid: true, // Still allow but warn
-          message: `Pincode ${pincode} is valid but location is ${distance.toFixed(1)}km from pincode center.`,
+          message: `Pincode ${pincode} is valid but the selected location is ${distance.toFixed(1)}km from the pincode center. Please confirm the address.`,
           suggestedPincode: pincode,
           city: pincodeData.city,
           district: pincodeData.district,
@@ -278,15 +291,19 @@ class MapService {
     coordinates: [number, number],
   ): Promise<PincodeValidationResult> {
     const reverse = await this.reverseGeocode(coordinates[0], coordinates[1]);
-    if (!reverse.success)
-      return { valid: false, message: "Invalid coordinates" };
+    if (!reverse.success) {
+      return {
+        valid: true,
+        message: `Pincode ${pincode} has a valid format. The online address lookup is unavailable right now, so your selected map position will be used.`,
+      };
+    }
 
     const foundPincode = reverse.pincode || reverse.components?.postcode;
     
     if (foundPincode && foundPincode !== pincode) {
       return {
         valid: true,
-        message: `Pincode may not match exact location. Found ${foundPincode} for this address. Using your pincode ${pincode}.`,
+        message: `Pincode ${pincode} differs from the pincode detected at this location (${foundPincode}). Please review the address before continuing.`,
         suggestedAddress: reverse.address,
         suggestedPincode: foundPincode,
       };
@@ -333,15 +350,22 @@ class MapService {
 
     // YOUR RULE: 1km = 3 minutes
     const estimatedMinutes = Math.ceil(distanceKm / DELIVERY_SPEED);
+    const pricing = calculateDeliveryPricing(distanceKm);
 
     return {
       success: true,
-      distanceKm,
+      distanceKm: pricing.distanceKm,
       estimatedMinutes,
       estimatedSeconds: estimatedMinutes * 60,
       estimatedTimeFormatted: this.formatTime(estimatedMinutes),
-      withinRange: distanceKm <= MAX_RADIUS,
-      maxRadius: MAX_RADIUS,
+      withinRange: pricing.withinRange,
+      maxRadius: pricing.maxRadius,
+      standardRadiusKm: pricing.standardRadiusKm,
+      chargePerExtraKm: pricing.chargePerExtraKm,
+      baseFee: pricing.baseFee,
+      extraDistanceKm: pricing.extraDistanceKm,
+      extraFee: pricing.extraFee,
+      deliveryFee: pricing.deliveryFee,
     };
   }
 
@@ -363,6 +387,8 @@ class MapService {
   async checkDeliveryRange(
     restaurantCoords: [number, number],
     customerCoords: [number, number],
+    baseFee = 0,
+    minimumMinutes = 0,
   ): Promise<DeliveryCheckResult> {
     const result = await this.getDistanceAndTime(
       restaurantCoords,
@@ -370,12 +396,29 @@ class MapService {
     );
     if (!result.success) return result;
 
+    const pricing = calculateDeliveryPricing(result.distanceKm || 0, baseFee);
+    // Travel time plus a small preparation allowance, but never less than the
+    // restaurant's own estimate.
+    const estimatedMinutes = Math.max(
+      (result.estimatedMinutes || 0) + DELIVERY_PREP_MINUTES,
+      minimumMinutes,
+    );
+    const estimatedTimeFormatted = this.formatTime(estimatedMinutes);
+
     return {
       ...result,
-      deliverable: result.withinRange,
-      message: result.withinRange
-        ? `We deliver! Estimated time: ${result.estimatedTimeFormatted}`
-        : `Sorry, we only deliver within ${MAX_RADIUS}km. You're ${result.distanceKm}km away.`,
+      ...pricing,
+      estimatedMinutes,
+      estimatedSeconds: estimatedMinutes * 60,
+      estimatedTimeFormatted,
+      deliverable: pricing.withinRange,
+      message: pricing.withinRange
+        ? `We deliver! Estimated time: ${estimatedTimeFormatted}. Delivery fee: ₹${pricing.deliveryFee}${
+            pricing.extraFee > 0
+              ? ` (includes ₹${pricing.extraFee} for ${pricing.extraDistanceKm} km beyond ${pricing.standardRadiusKm} km)`
+              : ""
+          }`
+        : `Sorry, we only deliver within ${pricing.maxRadius} km. You're ${pricing.distanceKm} km away.`,
     };
   }
 

@@ -28,6 +28,8 @@ const Profile = () => {
     city: "",
     state: "",
     country: "",
+    latitude: null as number | null,
+    longitude: null as number | null,
     profilePicture: "",
   });
 
@@ -49,6 +51,8 @@ const Profile = () => {
         city: user.city || "",
         state: user.state || "",
         country: user.country || "",
+        latitude: typeof user.latitude === "number" ? user.latitude : null,
+        longitude: typeof user.longitude === "number" ? user.longitude : null,
         profilePicture: user.profilePicture || "",
       });
       setSelectedProfilePicture(user.profilePicture || "");
@@ -61,13 +65,20 @@ const Profile = () => {
   const handleUseMyLocation = async () => {
     const location = await fetchLocation();
     if (location) {
+      const [longitude, latitude] = location.coordinates;
       setProfileData((prev) => ({
         ...prev,
-        address: location.address,
-        pincode: location.pincode || prev.pincode,
-        city: location.city || prev.city,
-        state: location.state || prev.state,
-        country: location.country || prev.country,
+        address: location.formattedAddress || location.address || prev.address,
+        // The GPS fix is the new source of truth. Never keep the old city/
+        // state/pincode when the reverse geocoder cannot fill a field —
+        // that is what produced addresses with a pincode from a previous
+        // location.
+        pincode: location.pincode || "",
+        city: location.city || "",
+        state: location.state || "",
+        country: location.country || "",
+        latitude,
+        longitude,
       }));
     }
   };
@@ -91,20 +102,36 @@ const Profile = () => {
 
   const changeHandler = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setProfileData((prev) => ({ ...prev, [name]: value }));
+    setProfileData((prev) => {
+      // Editing any part of the address invalidates a previously captured
+      // GPS/map pin, so clear it instead of saving a location that no longer
+      // matches the text the customer just typed.
+      const addressField = ["address", "pincode", "city", "state", "country"].includes(name);
+      return {
+        ...prev,
+        [name]: value,
+        ...(addressField ? { latitude: null, longitude: null } : {}),
+      };
+    });
   };
 
   const updateProfileHandler = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const payload: any = {};
-    if (profileData.fullname !== user?.fullname) payload.fullname = profileData.fullname;
+    if (profileData.fullname !== (user?.fullname || "")) payload.fullname = profileData.fullname;
     if (profileData.contact !== String(user?.contact || "")) payload.contact = profileData.contact;
     if (profileData.alternateContact !== String(user?.alternateContact || "")) payload.alternateContact = profileData.alternateContact;
-    if (profileData.address !== user?.address) payload.address = profileData.address;
-    if (profileData.pincode !== user?.pincode) payload.pincode = profileData.pincode;
-    if (profileData.city !== user?.city) payload.city = profileData.city;
-    if (profileData.state !== user?.state) payload.state = profileData.state;
-    if (profileData.country !== user?.country) payload.country = profileData.country;
+    if (profileData.address !== (user?.address || "")) payload.address = profileData.address;
+    if (profileData.pincode !== (user?.pincode || "")) payload.pincode = profileData.pincode;
+    if (profileData.city !== (user?.city || "")) payload.city = profileData.city;
+    if (profileData.state !== (user?.state || "")) payload.state = profileData.state;
+    if (profileData.country !== (user?.country || "")) payload.country = profileData.country;
+    const savedLatitude = typeof user?.latitude === "number" ? user.latitude : null;
+    const savedLongitude = typeof user?.longitude === "number" ? user.longitude : null;
+    if (profileData.latitude !== savedLatitude || profileData.longitude !== savedLongitude) {
+      payload.latitude = profileData.latitude;
+      payload.longitude = profileData.longitude;
+    }
     if (profileData.profilePicture !== user?.profilePicture) payload.profilePicture = profileData.profilePicture;
 
     if (Object.keys(payload).length === 0) return;
@@ -223,11 +250,18 @@ const Profile = () => {
                     city: data.city || data.formattedAddress.split(",").slice(-3, -2)[0]?.trim() || prev.city,
                     state: data.state || prev.state,
                     country: data.country || data.formattedAddress.split(",").pop()?.trim() || prev.country,
+                    latitude: data.coordinates[1],
+                    longitude: data.coordinates[0],
                   }));
                   setUseMapPicker(false);
                 }}
                 initialAddress={profileData.address}
                 initialPincode={profileData.pincode}
+                initialCoordinates={
+                  profileData.latitude !== null && profileData.longitude !== null
+                    ? [profileData.longitude, profileData.latitude]
+                    : undefined
+                }
               />
             ) : (
               <div className="space-y-3">
@@ -270,7 +304,7 @@ const Profile = () => {
                       value={profileData.pincode} 
                       onChange={async (e) => {
                         const value = e.target.value.replace(/\D/g, "").slice(0, 6);
-                        setProfileData((prev) => ({ ...prev, pincode: value }));
+                        setProfileData((prev) => ({ ...prev, pincode: value, latitude: null, longitude: null }));
                         
                         // Auto-fetch city/state from pincode when 6 digits entered
                         if (value.length === 6) {
@@ -281,9 +315,9 @@ const Profile = () => {
                             if (data.success) {
                               setProfileData((prev) => ({
                                 ...prev,
-                                city: data.city || prev.city,
-                                state: data.state || prev.state,
-                                country: data.country || prev.country,
+                                city: data.city || "",
+                                state: data.state || "",
+                                country: data.country || "",
                               }));
                             }
                           } catch (err) {

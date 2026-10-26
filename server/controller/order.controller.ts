@@ -6,6 +6,10 @@ import Stripe from "stripe";
 import mongoose from "mongoose";
 import { logger } from "../utils/logger.js";
 import { runWithOptionalTransaction } from "../utils/transactions.js";
+import mapService from "../services/mapService.js";
+import { calculateDeliveryPricing } from "../services/deliveryPricing.js";
+import { refundOrderPayment } from "../services/orderRefunds.js";
+import type { IOrder } from "../models/order.model.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
@@ -47,15 +51,47 @@ type CheckoutSessionRequest = {
     email: string;
     address: string;
     city: string;
+    state?: string;
+    country?: string;
     pincode: string;
     lat?: number;
     lng?: number;
   };
   restaurantId: string;
   paymentMethod?: "stripe" | "cod";
+  idempotencyKey?: string;
 };
 
-// ======================= STATUS TRANSITION UTILITY =======================
+const isValidCoordinate = (
+  coords: unknown,
+): coords is [number, number] => {
+  if (!Array.isArray(coords) || coords.length !== 2) return false;
+  const [lng, lat] = coords;
+  if (typeof lng !== "number" || typeof lat !== "number") return false;
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
+  if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return false;
+  return !(lng === 0 && lat === 0);
+};
+
+// The primary phone/address is shown to customers on confirmation and tracking
+// screens. The alternate phone is only returned to the restaurant's owner.
+const ORDER_RESTAURANT_FIELDS =
+  "restaurantName imageUrl user location deliveryTime deliveryPrice contact address city state pincode alternateContact";
+
+const serializeOrder = (order: any, includeAlternateContact: boolean) => {
+  const plain = order?.toObject ? order.toObject() : order;
+  if (!includeAlternateContact) {
+    // The alternate phone is private to the restaurant owner. It must never be
+    // exposed to the customer through either the populated restaurant or the
+    // historical snapshot stored on the order.
+    delete plain.restaurantAlternateContact;
+    if (plain?.restaurant && typeof plain.restaurant === "object") {
+      delete plain.restaurant.alternateContact;
+    }
+  }
+  return plain;
+};
+
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["confirmed", "cancelled", "payment_failed"],
   confirmed: ["preparing", "cancelled"],
@@ -80,7 +116,10 @@ export const getOrders = async (req: Request, res: Response) => {
 
     const [orders, totalCount] = await Promise.all([
       Order.find({ user: req.id })
-        .populate("restaurant", "restaurantName imageUrl location")
+        .populate(
+          "restaurant",
+          "restaurantName imageUrl location contact address city state pincode",
+        )
         .populate("user", "fullname email")
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -91,7 +130,9 @@ export const getOrders = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       count: orders.length,
-      orders,
+      // Customer-facing list: strip the private alternate phone while keeping
+      // the historical primary contact snapshot.
+      orders: orders.map((order) => serializeOrder(order, false)),
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(totalCount / limit),
@@ -114,7 +155,7 @@ export const getOrderById = async (req: Request, res: Response) => {
     }
 
     const order = await Order.findById(orderId)
-      .populate("restaurant", "restaurantName imageUrl user location deliveryTime deliveryPrice")
+      .populate("restaurant", ORDER_RESTAURANT_FIELDS)
       .populate("user", "fullname email");
 
     if (!order) {
@@ -129,7 +170,10 @@ export const getOrderById = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: "Not authorized" });
     }
 
-    return res.status(200).json({ success: true, order });
+    return res.status(200).json({
+      success: true,
+      order: serializeOrder(order, isRestaurantOwner),
+    });
   } catch {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
@@ -178,10 +222,142 @@ async function verifyCartPrices(
   return { verifiedItems, cartTotal, errors };
 }
 
+const isDuplicateKeyError = (error: unknown): boolean =>
+  (error as { code?: number } | null)?.code === 11000;
+
+/**
+ * Creates (or recreates) a Stripe Checkout Session for an already persisted
+ * order. Reusing the stored verified cart/pricing means an idempotent retry can
+ * never change the amount or create a second order.
+ */
+async function createStripeSessionForOrder(order: IOrder) {
+  const lineItems = createLineItems(
+    order.cartItems.map((item) => ({
+      menuId: item.menuId,
+      name: item.name,
+      image: item.image,
+      price: item.price,
+      quantity: item.quantity,
+    })),
+  );
+
+  if (order.deliveryFee > 0) {
+    lineItems.push({
+      price_data: {
+        currency: "inr",
+        product_data: { name: "Delivery Fee", images: [] },
+        unit_amount: Math.round(order.deliveryFee * 100),
+      },
+      quantity: 1,
+    });
+  }
+
+  const stripeSession = await stripe.checkout.sessions.create({
+    payment_method_types: ["card"],
+    shipping_address_collection: {
+      allowed_countries: ["IN", "GB", "US", "CA"],
+    },
+    line_items: lineItems,
+    mode: "payment",
+    success_url: `${process.env.FRONTEND_URL}/order/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.FRONTEND_URL}/cart`,
+    metadata: {
+      orderId: order._id.toString(),
+      images: JSON.stringify(order.cartItems.map((item) => item.image)),
+    },
+    payment_intent_data: {
+      metadata: {
+        orderId: order._id.toString(),
+      },
+    },
+  });
+
+  if (!stripeSession.url) {
+    throw new Error("Stripe did not return a checkout URL");
+  }
+
+  order.paymentIntentId = stripeSession.id;
+  await order.save();
+
+  return stripeSession;
+}
+
+/**
+ * Replays the response for a checkout request that used an idempotency key we
+ * have already seen. COD orders are simply returned; a still-pending Stripe
+ * order is resumed (existing session first, then a recreated one) so the
+ * customer can finish paying without a duplicate order.
+ */
+async function replayExistingOrder(order: IOrder, res: Response) {
+  if (order.paymentMethod === "cod") {
+    return res.status(200).json({
+      success: true,
+      message: "Order already placed successfully with Cash on Delivery",
+      order,
+      paymentMethod: "cod",
+      idempotentReplay: true,
+    });
+  }
+
+  if (order.status !== "pending") {
+    return res.status(409).json({
+      success: false,
+      message:
+        "This checkout attempt is no longer active. Please start a new checkout.",
+      orderId: order._id,
+      status: order.status,
+      idempotentReplay: true,
+    });
+  }
+
+  try {
+    let stripeSession: Stripe.Checkout.Session | null = null;
+
+    if (order.paymentIntentId?.startsWith("cs_")) {
+      try {
+        const existing = await stripe.checkout.sessions.retrieve(
+          order.paymentIntentId,
+        );
+        if (existing?.url) stripeSession = existing;
+      } catch (error) {
+        logger.warn(
+          { err: error, orderId: order._id },
+          "Existing Stripe session could not be retrieved; recreating it",
+        );
+      }
+    }
+
+    if (!stripeSession) {
+      stripeSession = await createStripeSessionForOrder(order);
+    }
+
+    return res.status(200).json({
+      success: true,
+      session: stripeSession,
+      orderId: order._id,
+      idempotentReplay: true,
+    });
+  } catch (error) {
+    logger.error(
+      { err: error, orderId: order._id },
+      "Failed to resume idempotent checkout",
+    );
+    return res.status(502).json({
+      success: false,
+      message: "Could not resume your payment session. Please try again.",
+    });
+  }
+}
+
 // ======================= CREATE CHECKOUT SESSION =======================
 export const createCheckoutSession = async (req: Request, res: Response) => {
   try {
     const checkoutSessionRequest: CheckoutSessionRequest = req.body;
+    const idempotencyKey =
+      typeof checkoutSessionRequest.idempotencyKey === "string" &&
+      checkoutSessionRequest.idempotencyKey.trim()
+        ? checkoutSessionRequest.idempotencyKey.trim()
+        : undefined;
 
     if (!checkoutSessionRequest.cartItems?.length) {
       return res.status(400).json({ success: false, message: "Cart items are required" });
@@ -191,6 +367,18 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
     }
     if (!checkoutSessionRequest.restaurantId) {
       return res.status(400).json({ success: false, message: "Restaurant ID is required" });
+    }
+
+    // Idempotent retry: resolve before any network/geocoding work so a
+    // double-submitted request does not create a second order or payment.
+    if (idempotencyKey) {
+      const existingOrder = await Order.findOne({
+        user: req.id,
+        idempotencyKey,
+      });
+      if (existingOrder) {
+        return replayExistingOrder(existingOrder, res);
+      }
     }
 
     const restaurant = await Restaurant.findById(checkoutSessionRequest.restaurantId).populate("menus");
@@ -212,8 +400,109 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "No valid items in cart" });
     }
 
-    const deliveryFee = restaurant.deliveryPrice || 0;
+    // ========== SERVER-AUTHORITATIVE DISTANCE & PRICING ==========
+    // Resolve the delivery position from the map pin/GPS coordinates, falling
+    // back to geocoding the address text. Never trust a client-supplied fee.
+    const requestedDetails = checkoutSessionRequest.deliveryDetails;
+    let customerCoordinates: [number, number] | null = isValidCoordinate([
+      requestedDetails.lng,
+      requestedDetails.lat,
+    ])
+      ? [requestedDetails.lng as number, requestedDetails.lat as number]
+      : null;
+
+    if (!customerCoordinates) {
+      const geoResult = await mapService.geocodeAddress(
+        requestedDetails.address,
+        requestedDetails.pincode,
+      );
+      if (!geoResult.success || !isValidCoordinate(geoResult.coordinates)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            geoResult.message ||
+            "Could not verify your delivery address. Please drop a pin on the map.",
+        });
+      }
+      customerCoordinates = geoResult.coordinates;
+    }
+
+    const restaurantCoordinates = restaurant.location?.coordinates;
+    if (!isValidCoordinate(restaurantCoordinates)) {
+      return res.status(400).json({
+        success: false,
+        message: "This restaurant has not set a valid delivery location yet",
+      });
+    }
+
+    const quote = await mapService.checkDeliveryRange(
+      restaurantCoordinates,
+      customerCoordinates,
+      restaurant.deliveryPrice || 0,
+      restaurant.deliveryTime || 0,
+    );
+
+    if (
+      !quote.success ||
+      quote.deliverable === false ||
+      quote.withinRange === false
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          quote.message ||
+          "Sorry, this restaurant does not deliver to your location",
+        distanceKm: quote.distanceKm,
+        maxRadius: quote.maxRadius,
+      });
+    }
+
+    // Recompute with the shared rule so the stored/charged fee cannot drift
+    // from what the cart/checkout UI displays.
+    const pricing = calculateDeliveryPricing(
+      quote.distanceKm || 0,
+      restaurant.deliveryPrice || 0,
+    );
+
+    if (!pricing.withinRange) {
+      return res.status(400).json({
+        success: false,
+        message: `Sorry, we only deliver within ${pricing.maxRadius} km. You're ${pricing.distanceKm} km away.`,
+        distanceKm: pricing.distanceKm,
+        maxRadius: pricing.maxRadius,
+      });
+    }
+
+    const deliveryFee = pricing.deliveryFee;
     const totalAmount = cartTotal + deliveryFee;
+
+    // Freeze the address + exact coordinates on the order so later profile
+    // edits can never change where an existing order is delivered.
+    const deliverySnapshot = {
+      ...requestedDetails,
+      lat: customerCoordinates[1],
+      lng: customerCoordinates[0],
+    };
+
+    const orderPricing = {
+      subtotal: cartTotal,
+      deliveryFee: pricing.deliveryFee,
+      deliveryBaseFee: pricing.baseFee,
+      deliveryExtraFee: pricing.extraFee,
+      deliveryDistanceKm: pricing.distanceKm,
+      estimatedDeliveryMinutes: Math.max(
+        quote.estimatedMinutes || 0,
+        restaurant.deliveryTime || 0,
+      ),
+    };
+
+    // Freeze the restaurant contact on the order so confirmation/tracking pages
+    // keep showing the correct number after the owner edits their profile.
+    const restaurantSnapshot = {
+      restaurantName: restaurant.restaurantName,
+      restaurantContact: restaurant.contact ?? null,
+      restaurantAlternateContact: restaurant.alternateContact ?? null,
+    };
 
     if (totalAmount < MIN_ORDER_AMOUNT) {
       return res.status(400).json({
@@ -245,11 +534,14 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
                 {
                   restaurant: restaurant._id,
                   user: req.id,
-                  deliveryDetails: checkoutSessionRequest.deliveryDetails,
+                  deliveryDetails: deliverySnapshot,
                   cartItems: verifiedItems,
+                  ...orderPricing,
+                  ...restaurantSnapshot,
                   totalAmount,
                   status: "confirmed",
                   paymentMethod: "cod",
+                  ...(idempotencyKey ? { idempotencyKey } : {}),
                 },
               ],
               sessionOptions
@@ -287,72 +579,41 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
           paymentMethod: "cod",
         });
       } catch (txnError) {
+        // A concurrent retry with the same idempotency key lost the unique
+        // index race. Return the winner's order instead of failing.
+        if (idempotencyKey && isDuplicateKeyError(txnError)) {
+          const existingOrder = await Order.findOne({
+            user: req.id,
+            idempotencyKey,
+          });
+          if (existingOrder) {
+            return replayExistingOrder(existingOrder, res);
+          }
+        }
         logger.error({ err: txnError }, "COD order creation failed");
         return res.status(500).json({ success: false, message: "Order failed, please try again" });
       }
     }
 
     // ========== STRIPE PAYMENT ==========
-    let lineItems;
-    try {
-      lineItems = createLineItems(verifiedItems);
-    } catch (err: any) {
-      return res.status(400).json({ success: false, message: err.message });
-    }
-
-    if (deliveryFee > 0) {
-      lineItems.push({
-        price_data: {
-          currency: "inr",
-          product_data: { name: "Delivery Fee", images: [] },
-          unit_amount: Math.round(deliveryFee * 100),
-        },
-        quantity: 1,
-      });
-    }
-
-    // Create order with verified prices
+    // Create the order first, then the payment session. If the session cannot
+    // be created, the order is deleted so no orphan `pending` order survives a
+    // failed payment initialization.
     const order = await Order.create({
       restaurant: restaurant._id,
       user: req.id,
-      deliveryDetails: checkoutSessionRequest.deliveryDetails,
+      deliveryDetails: deliverySnapshot,
       cartItems: verifiedItems,
+      ...orderPricing,
+      ...restaurantSnapshot,
       totalAmount,
       status: "pending",
       paymentMethod: "stripe",
+      ...(idempotencyKey ? { idempotencyKey } : {}),
     });
 
     try {
-      const stripeSession = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        shipping_address_collection: {
-          allowed_countries: ["IN", "GB", "US", "CA"],
-        },
-        line_items: lineItems,
-        mode: "payment",
-        success_url: `${process.env.FRONTEND_URL}/order/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.FRONTEND_URL}/cart`,
-        metadata: {
-          orderId: order._id.toString(),
-          images: JSON.stringify(verifiedItems.map((item) => item.image)),
-        },
-        payment_intent_data: {
-          metadata: {
-            orderId: order._id.toString(),
-          },
-        },
-      });
-
-      if (!stripeSession.url) {
-        await Order.findByIdAndDelete(order._id);
-        return res.status(400).json({
-          success: false,
-          message: "Error while creating checkout session",
-        });
-      }
-
-      order.paymentIntentId = stripeSession.id;
-      await order.save();
+      const stripeSession = await createStripeSessionForOrder(order);
 
       return res.status(200).json({ success: true, session: stripeSession, orderId: order._id });
     } catch (stripeErr) {
@@ -364,6 +625,24 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
+    // A concurrent request with the same key may have inserted the order after
+    // our preflight lookup. Replay that winning order instead of returning 500.
+    const idempotencyKey =
+      typeof (req.body as CheckoutSessionRequest | undefined)?.idempotencyKey ===
+        "string" && (req.body as CheckoutSessionRequest).idempotencyKey!.trim()
+        ? (req.body as CheckoutSessionRequest).idempotencyKey!.trim()
+        : undefined;
+
+    if (idempotencyKey && isDuplicateKeyError(error)) {
+      const existingOrder = await Order.findOne({
+        user: req.id,
+        idempotencyKey,
+      });
+      if (existingOrder) {
+        return replayExistingOrder(existingOrder, res);
+      }
+    }
+
     logger.error({ err: error }, "Checkout session error");
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
@@ -403,6 +682,14 @@ export const cancelOrder = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: "Not authorized to cancel this order" });
     }
 
+    if (order.status === "cancelled") {
+      return res.status(409).json({
+        success: false,
+        message: "This order is already cancelled",
+        order,
+      });
+    }
+
     if (!validateStatusTransition(order.status, "cancelled")) {
       return res.status(400).json({
         success: false,
@@ -410,31 +697,59 @@ export const cancelOrder = async (req: Request, res: Response) => {
       });
     }
 
-    if (order.paymentMethod === "stripe" && order.paymentIntentId) {
-      try {
-        let paymentIntentId = order.paymentIntentId;
-        if (paymentIntentId.startsWith("cs_")) {
-          const session = await stripe.checkout.sessions.retrieve(paymentIntentId);
-          paymentIntentId = session.payment_intent as string;
-        }
-        if (paymentIntentId && paymentIntentId.startsWith("pi_")) {
-          await stripe.refunds.create({
-            payment_intent: paymentIntentId,
-            reason: "requested_by_customer",
-          });
-        }
-      } catch (refundErr) {
-        logger.error({ err: refundErr, orderId }, "Stripe refund failed");
-      }
+    // Atomically claim the cancellation. The status predicate prevents two
+    // simultaneous cancel requests (or a cancel racing the auto-cancel worker)
+    // from both issuing a refund or both reporting success.
+    const initialRefundStatus =
+      order.paymentMethod === "stripe" && order.paymentIntentId
+        ? "pending"
+        : "not_applicable";
+
+    const cancelled = await Order.findOneAndUpdate(
+      { _id: order._id, user: req.id, status: order.status },
+      {
+        $set: {
+          status: "cancelled",
+          cancellationReason: "Cancelled by customer",
+          cancelledAt: new Date(),
+          cancelledBy: "customer",
+          refundStatus: initialRefundStatus,
+        },
+      },
+      { new: true },
+    );
+
+    if (!cancelled) {
+      return res.status(409).json({
+        success: false,
+        message: "This order was already updated. Please refresh and try again.",
+      });
     }
 
-    order.status = "cancelled";
-    await order.save();
+    if (initialRefundStatus === "pending") {
+      const outcome = await refundOrderPayment(cancelled, "requested_by_customer");
+
+      await Order.updateOne(
+        { _id: cancelled._id },
+        {
+          $set: {
+            refundStatus: outcome.status,
+            ...(outcome.refundId ? { refundId: outcome.refundId } : {}),
+          },
+        },
+      );
+
+      cancelled.refundStatus = outcome.status;
+      if (outcome.refundId) cancelled.refundId = outcome.refundId;
+    }
 
     return res.status(200).json({
       success: true,
-      message: "Order cancelled successfully",
-      order,
+      message:
+        cancelled.refundStatus === "failed"
+          ? "Order cancelled. The refund could not be completed automatically. Please contact support."
+          : "Order cancelled successfully",
+      order: cancelled,
     });
   } catch {
     return res.status(500).json({ success: false, message: "Internal server error" });
@@ -464,12 +779,34 @@ export const stripeWebhook = async (req: Request, res: Response) => {
   }
 
   try {
-    if (event.type === "checkout.session.completed") {
+    if (
+      event.type === "checkout.session.completed" ||
+      event.type === "checkout.session.async_payment_succeeded"
+    ) {
       const session = event.data.object as Stripe.Checkout.Session;
       const orderId = session.metadata?.orderId;
 
       if (!orderId) {
         logger.warn({ eventId: event.id }, "Webhook missing orderId metadata");
+        return res.status(200).send();
+      }
+
+      // Card payments are synchronous, but async payment methods can emit
+      // `checkout.session.completed` while the money has not settled. Never
+      // confirm (or count analytics for) an unpaid order.
+      const paymentStatus = (
+        session as Stripe.Checkout.Session & { payment_status?: string }
+      ).payment_status;
+      if (
+        event.type === "checkout.session.completed" &&
+        paymentStatus &&
+        paymentStatus !== "paid" &&
+        paymentStatus !== "no_payment_required"
+      ) {
+        logger.info(
+          { eventId: event.id, orderId, paymentStatus },
+          "Checkout session completed without a captured payment",
+        );
         return res.status(200).send();
       }
 
@@ -610,7 +947,7 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
     }
 
     const order = await Order.findById(session.metadata.orderId)
-      .populate("restaurant", "restaurantName imageUrl user location deliveryTime deliveryPrice")
+      .populate("restaurant", ORDER_RESTAURANT_FIELDS)
       .populate("user", "fullname email");
 
     if (!order) {
@@ -625,7 +962,11 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: "Not authorized" });
     }
 
-    return res.status(200).json({ success: true, order, session });
+    return res.status(200).json({
+      success: true,
+      order: serializeOrder(order, isRestaurantOwner),
+      session,
+    });
   } catch {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }

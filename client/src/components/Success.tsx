@@ -15,6 +15,8 @@ import {
   Loader2,
   RefreshCw,
   AlertCircle,
+  Phone,
+  Store,
 } from "lucide-react";
 
 // Statuses that mean payment has been captured / the order is valid.
@@ -89,8 +91,20 @@ const Success = () => {
   const orderId = order?._id || orderIdParam || "";
   const isPaid = order ? PAID_STATUSES.has(order.status) : false;
   const isPending = order?.status === "pending";
+  const isCancelled = order?.status === "cancelled";
   const isFailed =
-    order?.status === "payment_failed" || order?.status === "cancelled";
+    order?.status === "payment_failed" || isCancelled;
+  const restaurant =
+    order && order.restaurant && typeof order.restaurant === "object"
+      ? order.restaurant
+      : null;
+  // The snapshot is authoritative for historical orders; the populated
+  // restaurant is only a fallback for orders created before snapshots existed.
+  const restaurantName =
+    order?.restaurantName || restaurant?.restaurantName || "";
+  const restaurantContact =
+    order?.restaurantContact ?? restaurant?.contact ?? null;
+  const etaMinutes = order?.estimatedDeliveryMinutes;
 
   if (loading) {
     return (
@@ -173,25 +187,36 @@ const Success = () => {
                     : "text-green-600 dark:text-green-400"
               }`}
             >
-              {isFailed
-                ? "Payment Not Completed"
-                : isPending
-                  ? "Payment Processing"
-                  : "Order Confirmed!"}
+              {isCancelled
+                ? "Order Cancelled"
+                : isFailed
+                  ? "Payment Not Completed"
+                  : isPending
+                    ? "Payment Processing"
+                    : "Order Confirmed!"}
             </span>
           </div>
         </div>
 
         {/* Title */}
         <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white mb-3">
-          {isFailed ? "Something went wrong" : isPending ? "Almost there!" : "Thank You!"}
+          {isCancelled
+            ? "Order Cancelled"
+            : isFailed
+              ? "Something went wrong"
+              : isPending
+                ? "Almost there!"
+                : "Thank You!"}
         </h1>
         <p className="text-gray-500 dark:text-gray-400 mb-8">
-          {isFailed
-            ? "Your payment was not completed, so the order was not confirmed. Your cart has been kept so you can try again."
-            : isPending
-              ? "We're waiting for the payment confirmation from Stripe. This usually takes a few seconds."
-              : "Your order has been placed successfully. We're preparing your food with love!"}
+          {isCancelled
+            ? order.cancellationReason ||
+              "This order was cancelled. Check My Orders for details."
+            : isFailed
+              ? "Your payment was not completed, so the order was not confirmed. Your cart has been kept so you can try again."
+              : isPending
+                ? "We're waiting for the payment confirmation from Stripe. This usually takes a few seconds."
+                : "Your order has been placed successfully. We're preparing your food with love!"}
         </p>
 
         {/* Order Details Card */}
@@ -209,14 +234,40 @@ const Success = () => {
           </div>
 
           <div className="space-y-3">
+            {restaurantName && (
+              <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+                <Store className="w-4 h-4 text-orange-500" />
+                <span>
+                  {restaurantName}
+                  {restaurantContact ? (
+                    <>
+                      {" · "}
+                      <a
+                        href={`tel:${restaurantContact}`}
+                        className="text-orange-600 dark:text-orange-400 font-medium hover:underline"
+                      >
+                        <Phone className="w-3.5 h-3.5 inline mr-1" />
+                        {restaurantContact}
+                      </a>
+                    </>
+                  ) : null}
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
               <Clock className="w-4 h-4 text-orange-500" />
               <span>
-                {isPaid
-                  ? "Estimated delivery: 30-45 minutes"
-                  : isPending
-                    ? "Status: awaiting payment confirmation"
-                    : "Status: payment failed / order cancelled"}
+                {isCancelled
+                  ? order.cancelledAt
+                    ? `Cancelled ${new Date(order.cancelledAt).toLocaleString("en-IN")}`
+                    : "Order cancelled"
+                  : isPaid
+                    ? etaMinutes
+                      ? `Estimated delivery: ${etaMinutes} minutes`
+                      : "Estimated delivery: being confirmed"
+                    : isPending
+                      ? "Status: awaiting payment confirmation"
+                      : "Status: payment failed / order cancelled"}
               </span>
             </div>
             <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
@@ -231,6 +282,18 @@ const Success = () => {
                   : "Delivering to your selected address"}
               </span>
             </div>
+            {isCancelled &&
+              (order.refundStatus === "pending" ||
+                order.refundStatus === "refunded" ||
+                order.refundStatus === "failed") && (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  {order.refundStatus === "refunded"
+                    ? "Your refund has been processed."
+                    : order.refundStatus === "failed"
+                      ? "The refund could not be issued automatically. Please contact support."
+                      : "Your refund is being processed."}
+                </div>
+              )}
           </div>
         </div>
 

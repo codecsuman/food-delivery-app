@@ -11,9 +11,28 @@ interface DeliveryTimeEstimatorProps {
     pincode: string;
     coordinates: [number, number];
   };
+  /** Lets the checkout summary show the same server-calculated fee. */
+  onQuote?: (quote: DeliveryQuote | null) => void;
 }
 
-const DeliveryTimeEstimator = ({ restaurantId, customerCoords }: DeliveryTimeEstimatorProps) => {
+export interface DeliveryQuote {
+  success: boolean;
+  distanceKm?: number;
+  estimatedMinutes?: number;
+  estimatedTimeFormatted?: string;
+  deliverable?: boolean;
+  withinRange?: boolean;
+  maxRadius?: number;
+  standardRadiusKm?: number;
+  chargePerExtraKm?: number;
+  baseFee?: number;
+  extraDistanceKm?: number;
+  extraFee?: number;
+  deliveryFee?: number;
+  message?: string;
+}
+
+const DeliveryTimeEstimator = ({ restaurantId, customerCoords, onQuote }: DeliveryTimeEstimatorProps) => {
   const [deliveryInfo, setDeliveryInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -37,6 +56,7 @@ const DeliveryTimeEstimator = ({ restaurantId, customerCoords }: DeliveryTimeEst
       setDeliveryInfo(null);
       setError("");
       setLoading(false);
+      onQuote?.(null);
       return;
     }
 
@@ -68,12 +88,15 @@ const DeliveryTimeEstimator = ({ restaurantId, customerCoords }: DeliveryTimeEst
 
         if (data.success) {
           setDeliveryInfo(data);
+          onQuote?.(data as DeliveryQuote);
         } else {
           setError(data.message || "Failed to check delivery");
+          onQuote?.(null);
         }
       } catch (err: any) {
         if (!active || err?.name === "AbortError") return;
         setError("Network error. Please try again.");
+        onQuote?.(null);
       } finally {
         if (active) setLoading(false);
       }
@@ -85,7 +108,7 @@ const DeliveryTimeEstimator = ({ restaurantId, customerCoords }: DeliveryTimeEst
       active = false;
       controller.abort();
     };
-  }, [restaurantId, customerAddress, customerPincode, customerLng, customerLat, hasCoordinates]);
+  }, [restaurantId, customerAddress, customerPincode, customerLng, customerLat, hasCoordinates, onQuote]);
 
   if (loading) {
     return (
@@ -137,9 +160,19 @@ const DeliveryTimeEstimator = ({ restaurantId, customerCoords }: DeliveryTimeEst
                 <Navigation className="w-3.5 h-3.5" />
                 {distance} km
               </span>
-              <span className="text-gray-300">|</span>
-              <span>1 km = 3 min</span>
+              {typeof deliveryInfo.deliveryFee === "number" && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <span>Delivery ₹{deliveryInfo.deliveryFee}</span>
+                </>
+              )}
             </div>
+            {typeof deliveryInfo.extraFee === "number" && deliveryInfo.extraFee > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                Includes ₹{deliveryInfo.extraFee} for {deliveryInfo.extraDistanceKm} km beyond{" "}
+                {deliveryInfo.standardRadiusKm} km
+              </p>
+            )}
           </>
         ) : (
           <>

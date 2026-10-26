@@ -173,12 +173,15 @@ const Cart = () => {
                 ₹{totalAmount}
               </span>
             </div>
-            <div className="flex justify-between items-center mb-6 pt-3 border-t border-gray-200 dark:border-gray-600">
-              <span className="text-lg font-bold text-gray-900 dark:text-white">Total</span>
+            <div className="flex justify-between items-center mb-2 pt-3 border-t border-gray-200 dark:border-gray-600">
+              <span className="text-lg font-bold text-gray-900 dark:text-white">Items Total</span>
               <span className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent">
                 ₹{totalAmount}
               </span>
             </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-5">
+              Delivery is calculated at checkout from the distance between the restaurant and your address.
+            </p>
             <div className="flex justify-end">
               <Button
                 onClick={() => setOpen(true)}

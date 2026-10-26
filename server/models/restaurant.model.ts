@@ -3,9 +3,13 @@ import mongoose, { Document } from "mongoose";
 export interface IRestaurant {
   user: mongoose.Schema.Types.ObjectId;
   restaurantName: string;
+  address: string;
   city: string;
+  state: string;
   country: string;
   pincode: string; // Added: 6-digit pincode
+  contact: number | null;
+  alternateContact: number | null;
   deliveryTime: number;
   deliveryPrice: number;
   cuisines: string[];
@@ -45,6 +49,40 @@ const restaurantSchema = new mongoose.Schema<IRestaurantDocument>(
       required: [true, "City is required"],
       trim: true,
       maxlength: [50, "City name too long"],
+    },
+    address: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [500, "Address cannot exceed 500 characters"],
+    },
+    state: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [50, "State name too long"],
+    },
+    contact: {
+      type: Number,
+      default: null,
+      validate: {
+        validator: function (v: number | null) {
+          if (v === null) return true;
+          return /^\d{10}$/.test(v.toString());
+        },
+        message: "Restaurant contact must be exactly 10 digits",
+      },
+    },
+    alternateContact: {
+      type: Number,
+      default: null,
+      validate: {
+        validator: function (v: number | null) {
+          if (v === null) return true;
+          return /^\d{10}$/.test(v.toString());
+        },
+        message: "Alternate contact must be exactly 10 digits",
+      },
     },
     country: {
       type: String,

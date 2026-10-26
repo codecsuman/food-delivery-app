@@ -5,8 +5,12 @@ export const restaurantFromSchema = z.object({
     .string()
     .min(2, "Restaurant name must be at least 2 characters")
     .max(100, "Restaurant name cannot exceed 100 characters"),
+  address: z
+    .string()
+    .min(5, "Restaurant address is required")
+    .max(500, "Address cannot exceed 500 characters"),
   city: z.string().min(1, "City is required").max(50, "City name too long"),
-  state: z.string().max(50, "State name too long").optional().default(""),
+  state: z.string().min(1, "State is required").max(50, "State name too long"),
   country: z
     .string()
     .min(1, "Country is required")
@@ -15,6 +19,13 @@ export const restaurantFromSchema = z.object({
     .string()
     .min(1, "Pincode is required")
     .regex(/^\d{6}$/, "Pincode must be a 6-digit number"),
+  contact: z
+    .string()
+    .regex(/^\d{10}$/, "Contact number must be exactly 10 digits"),
+  alternateContact: z
+    .union([z.literal(""), z.string().regex(/^\d{10}$/, "Alternate contact must be exactly 10 digits")])
+    .optional()
+    .default(""),
   deliveryTime: z
     .number()
     .min(0, "Delivery time cannot be negative")

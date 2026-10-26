@@ -11,6 +11,8 @@ export interface IUser {
   city: string;
   state: string;
   country: string;
+  latitude: number | null;
+  longitude: number | null;
   profilePicture: string;
   admin: boolean;
   lastLogin?: Date;
@@ -97,6 +99,21 @@ const userSchema = new mongoose.Schema<IUserDocument>(
       type: String,
       default: "",
       trim: true,
+    },
+    // Last confirmed home/delivery position for this customer. Kept in sync
+    // with the saved address when the profile is saved from GPS or the map
+    // picker. `null` means "not pinned yet" so checkout can geocode the text.
+    latitude: {
+      type: Number,
+      default: null,
+      min: [-90, "Latitude must be between -90 and 90"],
+      max: [90, "Latitude must be between -90 and 90"],
+    },
+    longitude: {
+      type: Number,
+      default: null,
+      min: [-180, "Longitude must be between -180 and 180"],
+      max: [180, "Longitude must be between -180 and 180"],
     },
     profilePicture: {
       type: String,
