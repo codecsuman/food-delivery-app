@@ -369,6 +369,8 @@ VITE_SOCKET_URL=http://localhost:8001
 
 ## ☁️ Deployment
 
+> **A GitHub push is not a Render deploy.** The Vercel frontend deploys from GitHub automatically, but the Render backend only deploys when **Auto-Deploy** is enabled or when you click **Manual Deploy → Deploy latest commit**. If `/health` still returns only `status` and `message`, the backend has not been updated.
+
 **Frontend → Vercel**
 - Build Command: `npm run build`
 - Output Directory: `dist`
