@@ -1,5 +1,9 @@
 import { Orders } from "@/types/orderType";
-import { MenuItem, RestaurantState } from "@/types/restaurantType";
+import {
+  MenuItem,
+  RestaurantOrderEvent,
+  RestaurantState,
+} from "@/types/restaurantType";
 import { isValidObjectId } from "@/lib/validation";
 import { findUnpersistedFields } from "@/lib/persistence";
 import axios from "axios";
@@ -372,7 +376,7 @@ export const useRestaurantStore = create<RestaurantState>()(
         return request;
       },
 
-      getRestaurantOrders: async () => {
+      getRestaurantOrders: async (options?: { silent?: boolean }) => {
         try {
           set({ loading: true });
           const response = await axios.get(
@@ -384,7 +388,7 @@ export const useRestaurantStore = create<RestaurantState>()(
         } catch (error: any) {
           if (error?.response?.status === 404) {
             set({ restaurantOrder: [] });
-          } else {
+          } else if (!options?.silent) {
             toast.error(getErrorMessage(error));
           }
         } finally {
@@ -411,6 +415,41 @@ export const useRestaurantStore = create<RestaurantState>()(
         } catch (error: any) {
           toast.error(getErrorMessage(error));
         }
+      },
+
+      applyRestaurantOrderEvent: (event: RestaurantOrderEvent) => {
+        set((state) => ({
+          restaurantOrder: state.restaurantOrder.map((order) =>
+            order._id === event.orderId
+              ? {
+                  ...order,
+                  status: event.status,
+                  ...(event.totalAmount !== undefined
+                    ? { totalAmount: event.totalAmount }
+                    : {}),
+                  ...(event.cancellationReason !== undefined
+                    ? { cancellationReason: event.cancellationReason ?? undefined }
+                    : {}),
+                  ...(event.cancelledAt
+                    ? { cancelledAt: new Date(event.cancelledAt).toISOString() }
+                    : {}),
+                  ...(event.cancelledBy
+                    ? {
+                        cancelledBy:
+                          event.cancelledBy as Orders["cancelledBy"],
+                      }
+                    : {}),
+                  ...(event.refundStatus
+                    ? {
+                        refundStatus:
+                          event.refundStatus as Orders["refundStatus"],
+                      }
+                    : {}),
+                  updatedAt: new Date().toISOString(),
+                }
+              : order,
+          ),
+        }));
       },
 
       getUserRestaurants: async () => {

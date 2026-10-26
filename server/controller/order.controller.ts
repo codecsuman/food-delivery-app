@@ -20,6 +20,10 @@ import {
   paymentStatusAfterRefund,
 } from "../services/orderPayments.js";
 import type { IOrder } from "../models/order.model.js";
+import {
+  emitNewOrder,
+  emitOrderStatus,
+} from "../socketHandlers/orderEvents.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
@@ -580,6 +584,17 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
           }
         );
 
+        // The restaurant dashboard listens on its restaurant room. Emit only
+        // after the transaction/compensation path has committed, so a failed
+        // checkout never produces a phantom row in the owner's list.
+        emitNewOrder({
+          orderId: order._id.toString(),
+          restaurantId: order.restaurant.toString(),
+          status: order.status,
+          totalAmount: order.totalAmount,
+          createdAt: order.createdAt,
+        });
+
         return res.status(200).json({
           success: true,
           message: "Order placed successfully with Cash on Delivery",
@@ -787,6 +802,18 @@ export const cancelOrder = async (req: Request, res: Response) => {
       cancelled.paymentStatus = nextPaymentStatus;
       if (outcome.refundId) cancelled.refundId = outcome.refundId;
     }
+
+    emitOrderStatus({
+      orderId: cancelled._id.toString(),
+      restaurantId: cancelled.restaurant.toString(),
+      status: cancelled.status,
+      totalAmount: cancelled.totalAmount,
+      cancellationReason: cancelled.cancellationReason,
+      cancelledAt: cancelled.cancelledAt,
+      cancelledBy: cancelled.cancelledBy,
+      refundStatus: cancelled.refundStatus,
+      paymentStatus: cancelled.paymentStatus,
+    });
 
     return res.status(200).json({
       success: true,
@@ -1078,6 +1105,21 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         );
 
         logger.info({ eventId: event.id, orderId }, "Order confirmed via webhook");
+
+        emitNewOrder({
+          orderId: order._id.toString(),
+          restaurantId: order.restaurant.toString(),
+          status: order.status,
+          totalAmount: order.totalAmount,
+          createdAt: order.createdAt,
+        });
+        emitOrderStatus({
+          orderId: order._id.toString(),
+          restaurantId: order.restaurant.toString(),
+          status: order.status,
+          totalAmount: order.totalAmount,
+          paymentStatus: order.paymentStatus,
+        });
       } catch (txnError) {
         logger.error({ err: txnError, orderId }, "Webhook confirmation failed");
         // Let the outer handler record the failure so Stripe can retry.
@@ -1106,6 +1148,14 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         ];
         await order.save();
         logger.info({ orderId }, "Order marked as payment_failed");
+
+        emitOrderStatus({
+          orderId: order._id.toString(),
+          restaurantId: order.restaurant.toString(),
+          status: order.status,
+          totalAmount: order.totalAmount,
+          paymentStatus: order.paymentStatus,
+        });
       }
     }
 
@@ -1130,6 +1180,17 @@ export const stripeWebhook = async (req: Request, res: Response) => {
           ];
           await order.save();
           logger.info({ orderId }, "Order cancelled due to expired checkout session");
+
+          emitOrderStatus({
+            orderId: order._id.toString(),
+            restaurantId: order.restaurant.toString(),
+            status: order.status,
+            totalAmount: order.totalAmount,
+            cancellationReason: order.cancellationReason,
+            cancelledAt: order.cancelledAt,
+            cancelledBy: order.cancelledBy,
+            paymentStatus: order.paymentStatus,
+          });
         }
       }
     }

@@ -79,6 +79,7 @@ import reviewRoute from "./routes/review.route.js";
 import mapRoute from "./routes/map.route.js";
 import issueRoute from "./routes/issue.route.js";
 import { setupTrackingSocket } from "./socketHandlers/trackingSocket.js";
+import { setSocketServer, emitOrderStatus } from "./socketHandlers/orderEvents.js";
 import bodyParser from "body-parser";
 import { stripeWebhook } from "./controller/order.controller.js";
 import { logger } from "./utils/logger.js";
@@ -151,6 +152,8 @@ const io = new SocketServer(httpServer, {
 });
 
 setupTrackingSocket(io);
+// Controllers use this registry to push order events to tracking/dashboard rooms.
+setSocketServer(io);
 
 // =========================
 // MIDDLEWARE
@@ -273,7 +276,7 @@ const startServer = async () => {
     // deploy/crash does not lose or duplicate cancellations. Emitting to the
     // customer tracking room and the restaurant room keeps both views live.
     const stopAutoCancelJob = startAutoCancelJob((order) => {
-      const payload = {
+      emitOrderStatus({
         orderId: order._id.toString(),
         restaurantId: order.restaurant.toString(),
         status: order.status,
@@ -281,10 +284,7 @@ const startServer = async () => {
         cancelledAt: order.cancelledAt,
         cancelledBy: order.cancelledBy,
         refundStatus: order.refundStatus,
-      };
-
-      io.to(`order:${order._id}`).emit("order:status", payload);
-      io.to(`restaurant:${order.restaurant}`).emit("order:status", payload);
+      });
     });
 
     const server = httpServer.listen(PORT, () => {

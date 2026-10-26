@@ -10,6 +10,7 @@
  * the Vite dev proxy is used).
  */
 import axios from "axios";
+import type { ManagerOptions, SocketOptions } from "socket.io-client";
 
 const configuredApiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(
   /\/+$/,
@@ -28,6 +29,23 @@ export const SOCKET_URL = import.meta.env.DEV
     configuredApiBase.replace(/\/api\/v1$/, "") ||
     pageOrigin
   : pageOrigin;
+
+/**
+ * Socket.IO connection options shared by the customer tracking page and the
+ * restaurant dashboard.
+ *
+ * Production traffic is proxied by Vercel rewrites, which forward Socket.IO's
+ * HTTP polling requests but not the WebSocket upgrade. Attempting the upgrade
+ * anyway logs a failed `wss://` connection before falling back, so production
+ * connects with long-polling only. Local development keeps the default
+ * (WebSocket upgrade first).
+ */
+export const SOCKET_CONNECTION_OPTIONS: Partial<
+  ManagerOptions & SocketOptions
+> = {
+  withCredentials: true,
+  ...(import.meta.env.PROD ? { transports: ["polling"] } : {}),
+};
 
 /**
  * True when a request was answered with the SPA's index.html instead of JSON.

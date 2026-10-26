@@ -45,6 +45,17 @@ export type FilterOptionsData = {
   dishes: string[];
 };
 
+export type RestaurantOrderEvent = {
+  orderId: string;
+  status: string;
+  totalAmount?: number;
+  cancellationReason?: string | null;
+  cancelledAt?: string | Date | null;
+  cancelledBy?: string | null;
+  refundStatus?: string | null;
+  paymentStatus?: string | null;
+};
+
 export type RestaurantState = {
   loading: boolean;
   restaurant: Restaurant | null;
@@ -73,8 +84,10 @@ export type RestaurantState = {
   setAppliedFilter: (value: string) => void;
   resetAppliedFilter: () => void;
   getSingleRestaurant: (restaurantId: string) => Promise<void>;
-  getRestaurantOrders: () => Promise<void>;
+  getRestaurantOrders: (options?: { silent?: boolean }) => Promise<void>;
   updateRestaurantOrder: (orderId: string, status: string) => Promise<void>;
+  /** Merge a live `order:status` Socket.IO event into the dashboard list. */
+  applyRestaurantOrderEvent: (event: RestaurantOrderEvent) => void;
   getUserRestaurants: () => Promise<void>;
   getAllRestaurants: () => Promise<void>;
   deleteRestaurant: (id: string) => Promise<boolean>;

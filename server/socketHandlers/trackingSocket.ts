@@ -204,6 +204,31 @@ export const setupTrackingSocket = (io: Server) => {
       }
     });
 
+    // ========== RESTAURANT OWNER JOIN (ALL OWNED RESTAURANTS) ==========
+    // The dashboard does not know every restaurant id before it renders, so it
+    // joins once and the server resolves the ownership. This keeps the order
+    // list live without an extra round-trip on page load.
+    socket.on("owner:join", async () => {
+      try {
+        const { Restaurant } = await import("../models/restaurant.model.js");
+        const restaurants = await Restaurant.find({ user: userId }).select("_id");
+
+        const restaurantIds = restaurants.map((r) => r._id.toString());
+        for (const restaurantId of restaurantIds) {
+          socket.join(`restaurant:${restaurantId}`);
+        }
+
+        socket.emit("owner:joined", { restaurantIds });
+        logger.info(
+          { userId, restaurantCount: restaurantIds.length },
+          "Restaurant owner joined dashboard rooms",
+        );
+      } catch (error) {
+        logger.error({ err: error, userId }, "Owner join error");
+        socket.emit("error", { message: "Failed to join restaurant rooms" });
+      }
+    });
+
     // ========== DRIVER LOCATION UPDATE ==========
     socket.on(
       "driver:location",

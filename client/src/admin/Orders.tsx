@@ -1,12 +1,29 @@
 import { Label } from "@/components/ui/label";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
-import { useEffect, useState } from "react";
-import { Loader2, PackageOpen, MapPin, Mail, Calendar, Phone, Store } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
+import { SOCKET_CONNECTION_OPTIONS, SOCKET_URL } from "@/lib/api";
+import { getImageUrl, handleImageError } from "@/lib/placeholder";
+import type { RestaurantOrderEvent } from "@/types/restaurantType";
+import {
+  Loader2,
+  PackageOpen,
+  MapPin,
+  Mail,
+  Calendar,
+  Phone,
+  Store,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+} from "lucide-react";
 
 const Orders = () => {
   const { restaurantOrder, getRestaurantOrders, updateRestaurantOrder, loading } =
     useRestaurantStore();
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
 
   // Step-by-step status flow matching backend exactly
   const STATUS_FLOW: Record<
@@ -68,6 +85,64 @@ const Orders = () => {
     getRestaurantOrders();
   }, [getRestaurantOrders]);
 
+  // Live updates: the server emits `order:new` / `order:status` to every
+  // restaurant room this owner belongs to. `owner:join` asks the server to
+  // resolve ownership, so the page does not need the restaurant ids first.
+  useEffect(() => {
+    const socket = io(SOCKET_URL, {
+      ...SOCKET_CONNECTION_OPTIONS,
+      autoConnect: false,
+    });
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      setIsLive(true);
+      socket.emit("owner:join");
+    });
+    socket.on("disconnect", () => setIsLive(false));
+    socket.on("connect_error", () => setIsLive(false));
+
+    socket.on("order:new", () => {
+      getRestaurantOrders({ silent: true });
+    });
+
+    socket.on("order:status", (event: RestaurantOrderEvent) => {
+      if (!event?.orderId) return;
+      const { restaurantOrder, applyRestaurantOrderEvent } =
+        useRestaurantStore.getState();
+      if (restaurantOrder.some((order) => order._id === event.orderId)) {
+        applyRestaurantOrderEvent(event);
+      } else {
+        // A new order we have not loaded yet (e.g. first event after login).
+        getRestaurantOrders({ silent: true });
+      }
+    });
+
+    const connectTimer = setTimeout(() => {
+      if (socketRef.current === socket) socket.connect();
+    }, 0);
+
+    return () => {
+      clearTimeout(connectTimer);
+      socket.removeAllListeners();
+      socket.disconnect();
+      if (socketRef.current === socket) socketRef.current = null;
+    };
+  }, [getRestaurantOrders]);
+
+  // Fallback for environments where the socket cannot connect (proxy/CDN
+  // blocks long-polling). The list still refreshes, just without instant
+  // updates. Polling stops while the socket is connected.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (socketRef.current?.connected) return;
+      getRestaurantOrders({ silent: true });
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [getRestaurantOrders]);
+
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
@@ -107,13 +182,48 @@ const Orders = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/60 via-white to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-900 py-10 px-4">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-10">
-          <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
-            Orders Overview
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Track and manage incoming customer orders
-          </p>
+        <div className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+              Orders Overview
+            </h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Track and manage incoming customer orders
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                isLive
+                  ? "bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400"
+                  : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+              }`}
+              title={
+                isLive
+                  ? "Receiving live order updates"
+                  : "Live updates unavailable — the list refreshes every 15 seconds"
+              }
+            >
+              {isLive ? (
+                <Wifi className="h-3.5 w-3.5" />
+              ) : (
+                <WifiOff className="h-3.5 w-3.5" />
+              )}
+              {isLive ? "Live" : "Auto-refresh"}
+            </span>
+
+            <button
+              onClick={() => getRestaurantOrders()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-600 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-orange-500/50 dark:hover:text-orange-400"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Loading State */}
@@ -239,12 +349,10 @@ const Orders = () => {
                             className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400"
                           >
                             <img
-                              src={item.image || "https://via.placeholder.com/40?text=Food"}
+                              src={getImageUrl(item.image)}
                               alt={item.name || "Item"}
                               className="w-10 h-10 object-cover rounded-lg ring-1 ring-black/5"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = "https://via.placeholder.com/40?text=Food";
-                              }}
+                              onError={handleImageError}
                             />
                             <span>
                               {item.name || "Unknown Item"}{" "}

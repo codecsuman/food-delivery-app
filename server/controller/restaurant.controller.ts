@@ -6,6 +6,7 @@ import { logger } from "../utils/logger.js";
 import mongoose from "mongoose";
 import { isValidObjectId } from "../utils/objectId.js";
 import { refundOrderPayment } from "../services/orderRefunds.js";
+import { emitOrderStatus } from "../socketHandlers/orderEvents.js";
 import {
   paymentEvent,
   paymentStatusOnCancellation,
@@ -591,6 +592,21 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       updatedOrder.paymentStatus = nextPaymentStatus;
       if (outcome.refundId) updatedOrder.refundId = outcome.refundId;
     }
+
+    // Push the change to the customer's tracking page and every other
+    // dashboard tab. Without this the customer only saw the new status after
+    // the 10 s polling fallback (or a manual refresh).
+    emitOrderStatus({
+      orderId: updatedOrder._id.toString(),
+      restaurantId: updatedOrder.restaurant.toString(),
+      status: updatedOrder.status,
+      totalAmount: updatedOrder.totalAmount,
+      cancellationReason: updatedOrder.cancellationReason,
+      cancelledAt: updatedOrder.cancelledAt,
+      cancelledBy: updatedOrder.cancelledBy,
+      refundStatus: updatedOrder.refundStatus,
+      paymentStatus: updatedOrder.paymentStatus,
+    });
 
     return res.status(200).json({
       success: true,

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { io, Socket } from "socket.io-client";
-import { API_BASE_URL, SOCKET_URL } from "@/lib/api";
+import { API_BASE_URL, SOCKET_CONNECTION_OPTIONS, SOCKET_URL } from "@/lib/api";
 import { Truck, Clock, MapPin, Navigation, Package, ChefHat, CheckCircle2, CircleDot, AlertCircle, Phone, Store } from "lucide-react";
 
 // Fix Leaflet default marker icon
@@ -463,7 +463,7 @@ const LiveTracking = ({
     // disconnect is what produced "WebSocket is closed before the connection
     // is established" in the browser console.
     const activeSocket = io(SOCKET_URL, {
-      withCredentials: true,
+      ...SOCKET_CONNECTION_OPTIONS,
       autoConnect: false,
     });
     socket.current = activeSocket;
