@@ -392,6 +392,14 @@ curl -s https://food-delivery-backend-3dwa.onrender.com/health
 
 A current build returns `version`, `database`, `transactions`, and `checks` alongside `status`. If the response is only `{"status":"OK","message":"Server is running"}`, Render is still serving an older build — click **Manual Deploy → Deploy latest commit** or turn on **Auto-Deploy** for `main`.
 
+**Automated backend deploy from GitHub (optional):**
+
+1. In Render, open the backend service → **Settings → Deploy Hook**, and copy the hook URL.
+2. In GitHub, open **Settings → Secrets and variables → Actions**, and add a repository secret named `RENDER_DEPLOY_HOOK_URL` with that URL.
+3. Run the **Deploy backend to Render** workflow from the **Actions** tab (or push a change under `server/`).
+
+The workflow skips safely with a notice until the secret is configured. It never prints the hook URL.
+
 <br/>
 
 ## 🎯 How to Use
