@@ -36,7 +36,7 @@ export const useMenuStore = create<MenuState>((set) => ({
   createMenu: async (formData: FormData) => {
     try {
       set({ loading: true });
-      const response = await axios.post(`${API_END_POINT}/`, formData, {
+      const response = await axios.post(API_END_POINT, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
@@ -105,7 +105,7 @@ export const useMenuStore = create<MenuState>((set) => ({
   getAllMenus: async () => {
     try {
       set({ loading: true });
-      const response = await axios.get(`${API_END_POINT}/`);
+      const response = await axios.get(API_END_POINT);
       if (response.data.success) {
         set({ menus: response.data.menus || [] });
       }

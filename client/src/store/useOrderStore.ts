@@ -63,7 +63,7 @@ export const useOrderStore = create<OrderState>((set) => ({
   getOrderDetails: async () => {
     try {
       set({ loading: true });
-      const response = await axios.get(`${API_END_POINT}/`);
+      const response = await axios.get(API_END_POINT);
       if (response.data.success) {
         set({ orders: response.data.orders || [] });
       } else {

@@ -625,6 +625,27 @@ If the error persists:
 </details>
 
 <details>
+<summary><b>My Orders is empty, the home page shows no menus, or live tracking never connects (but it works locally)</b></summary>
+
+A deployed API request is probably being answered with the SPA's `index.html` instead of JSON. This happens when a proxy rewrite misses a path — most commonly a **trailing-slash** URL such as `/api/v1/order/` or `/api/v1/menu/`. The browser receives `200 text/html`, so the app looks "successfully empty" rather than erroring.
+
+1. Check the response:
+   ```bash
+   curl -i https://<your-vercel-domain>/api/v1/order/
+   ```
+   `content-type: text/html` means the rewrite fell through to `index.html`; `application/json` (or a `401` JSON body) is correct.
+2. Make sure the request has no trailing slash after the collection root: use `/api/v1/order`, not `/api/v1/order/`. The stores already do this.
+3. Confirm `client/vercel.json` still rewrites `/api/(.*)` → `https://food-delivery-backend-3dwa.onrender.com/api/$1` and `/socket.io/(.*)` → `.../socket.io/$1`, then redeploy Vercel.
+4. The Socket.IO handshake must also return JSON:
+   ```bash
+   curl -i "https://<your-vercel-domain>/socket.io/?EIO=4&transport=polling"
+   ```
+   If it returns HTML, live tracking cannot connect.
+
+The client now installs an Axios guard (`client/src/lib/api.ts`) that rejects HTML bodies, so the UI shows *"The server returned a web page instead of API data"* instead of a silent empty state.
+</details>
+
+<details>
 <summary><b>Profile or restaurant fields appear saved but disappear after a refresh</b></summary>
 
 The frontend can be deployed ahead of the backend. An older backend silently ignores fields that are not in its Mongoose schema (strict mode), so the request returns `200` even though the values were never written. This affected `alternateContact`, `pincode`, `state`, `city`, `country`, and address changes when Render was still serving the September build.

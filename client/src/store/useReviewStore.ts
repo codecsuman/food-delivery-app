@@ -55,7 +55,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   addReview: async (data) => {
     try {
       set({ loading: true });
-      const response = await axios.post(`${API_END_POINT}/`, data);
+      const response = await axios.post(API_END_POINT, data);
       if (response.data.success) {
         toast.success(response.data.message);
         set((state) => ({

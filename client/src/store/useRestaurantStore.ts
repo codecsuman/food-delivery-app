@@ -88,7 +88,7 @@ export const useRestaurantStore = create<RestaurantState>()(
       createRestaurant: async (formData: FormData) => {
         try {
           set({ loading: true });
-          const response = await axios.post(`${API_END_POINT}/`, formData, {
+          const response = await axios.post(API_END_POINT, formData, {
             headers: { "Content-Type": "multipart/form-data" },
           });
           if (response.data.success) {
@@ -109,7 +109,9 @@ export const useRestaurantStore = create<RestaurantState>()(
       getRestaurant: async () => {
         try {
           set({ loading: true });
-          const response = await axios.get(`${API_END_POINT}/?t=${Date.now()}`);
+          const response = await axios.get(API_END_POINT, {
+            params: { t: Date.now() },
+          });
           if (response.data.success) {
             set({ restaurant: response.data.restaurant });
           }
@@ -131,7 +133,7 @@ export const useRestaurantStore = create<RestaurantState>()(
           const restaurantId = get().restaurant?._id;
           const url = restaurantId
             ? `${API_END_POINT}/${restaurantId}`
-            : `${API_END_POINT}/`;
+            : API_END_POINT;
           const response = await axios.put(url, formData, {
             headers: { "Content-Type": "multipart/form-data" },
           });
