@@ -19,33 +19,38 @@ type OrderWithItems = {
 export const refreshOrderItemImages = async <T extends OrderWithItems>(
   orders: T[],
 ): Promise<T[]> => {
-  const menuIds = new Set<string>();
+  try {
+    const menuIds = new Set<string>();
 
-  for (const order of orders) {
-    for (const item of order.cartItems ?? []) {
-      if (item?.menuId && item.image && Types.ObjectId.isValid(item.menuId)) {
-        menuIds.add(item.menuId);
+    for (const order of orders) {
+      for (const item of order.cartItems ?? []) {
+        if (item?.menuId && item.image && Types.ObjectId.isValid(item.menuId)) {
+          menuIds.add(item.menuId);
+        }
       }
     }
-  }
 
-  if (menuIds.size === 0) return orders;
+    if (menuIds.size === 0) return orders;
 
-  const menus = await Menu.find({ _id: { $in: [...menuIds] } }).select(
-    "_id image",
-  );
-  const currentImage = new Map(
-    menus.map((menu) => [menu._id.toString(), menu.image]),
-  );
+    const menus = await Menu.find({ _id: { $in: [...menuIds] } }).select(
+      "_id image",
+    );
+    const currentImage = new Map(
+      menus.map((menu) => [menu._id.toString(), menu.image]),
+    );
 
-  for (const order of orders) {
-    for (const item of order.cartItems ?? []) {
-      const image = item.menuId ? currentImage.get(item.menuId) : undefined;
-      if (image && image !== item.image) {
-        item.image = image;
+    for (const order of orders) {
+      for (const item of order.cartItems ?? []) {
+        const image = item.menuId ? currentImage.get(item.menuId) : undefined;
+        if (image && image !== item.image) {
+          item.image = image;
+        }
       }
     }
-  }
 
-  return orders;
+    return orders;
+  } catch {
+    // Cosmetic cleanup only — never let it fail an order-history request.
+    return orders;
+  }
 };
