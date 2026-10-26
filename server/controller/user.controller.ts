@@ -18,6 +18,17 @@ export const signup = async (req: Request, res: Response) => {
       });
     }
 
+    if (
+      typeof fullname !== "string" ||
+      typeof email !== "string" ||
+      typeof password !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Fullname, email and password must be text",
+      });
+    }
+
     if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
@@ -29,6 +40,27 @@ export const signup = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: "Password must be at least 6 characters",
+      });
+    }
+
+    // `contact` may arrive as a number (JSON) or a string (form data). Reject
+    // anything that is not a 10-digit number instead of persisting NaN or
+    // letting Mongoose turn a validation problem into a 500.
+    const contactNumber =
+      contact === undefined || contact === null || contact === ""
+        ? null
+        : typeof contact === "string" || typeof contact === "number"
+          ? Number(contact)
+          : Number.NaN;
+
+    if (
+      contactNumber !== null &&
+      (!Number.isInteger(contactNumber) ||
+        !/^\d{10}$/.test(String(contactNumber)))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Contact must be a valid 10-digit number",
       });
     }
 
@@ -46,7 +78,7 @@ export const signup = async (req: Request, res: Response) => {
       fullname,
       email,
       password: hashedPassword,
-      contact: contact ? Number(contact) : null,
+      contact: contactNumber,
       isVerified: true,
       admin: false,
     });

@@ -1,6 +1,11 @@
 import { Order, type IOrder } from "../models/order.model.js";
 import { logger } from "../utils/logger.js";
 import { refundOrderPayment, type RefundStatus } from "./orderRefunds.js";
+import {
+  paymentEvent,
+  paymentStatusOnCancellation,
+  paymentStatusAfterRefund,
+} from "./orderPayments.js";
 
 const readHours = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseFloat(value ?? "");
@@ -75,6 +80,7 @@ export async function runAutoCancelOrders(
 
   for (const candidate of candidates) {
     const previousStatus = candidate.status;
+    const cancellationPaymentStatus = paymentStatusOnCancellation(candidate);
     const initialRefundStatus: RefundStatus =
       candidate.paymentMethod === "stripe" && candidate.paymentIntentId
         ? "pending"
@@ -96,6 +102,16 @@ export async function runAutoCancelOrders(
           cancelledAt: now,
           cancelledBy: "system",
           refundStatus: initialRefundStatus,
+          paymentStatus: cancellationPaymentStatus,
+        },
+        $push: {
+          paymentEvents: paymentEvent(
+            initialRefundStatus === "pending"
+              ? "refund_requested"
+              : "cancellation",
+            cancellationPaymentStatus,
+            { amount: candidate.totalAmount, note: autoCancelReason() },
+          ),
         },
       },
       { new: true },
@@ -114,17 +130,41 @@ export async function runAutoCancelOrders(
       refundStatus = outcome.status;
       refundId = outcome.refundId;
 
+      const nextPaymentStatus =
+        outcome.status === "not_applicable"
+          ? "unpaid"
+          : paymentStatusAfterRefund(cancellationPaymentStatus, outcome.status);
+
       await Order.updateOne(
         { _id: cancelled._id, status: "cancelled" },
         {
           $set: {
             refundStatus,
+            paymentStatus: nextPaymentStatus,
             ...(refundId ? { refundId } : {}),
+          },
+          $push: {
+            paymentEvents: paymentEvent(
+              outcome.status === "refunded"
+                ? "refund_succeeded"
+                : outcome.status === "failed"
+                  ? "refund_failed"
+                  : "cancellation",
+              nextPaymentStatus,
+              {
+                amount: cancelled.totalAmount,
+                ...(outcome.refundId ? { providerId: outcome.refundId } : {}),
+                ...(outcome.error
+                  ? { note: outcome.error.slice(0, 300) }
+                  : {}),
+              },
+            ),
           },
         },
       );
 
       cancelled.refundStatus = refundStatus;
+      cancelled.paymentStatus = nextPaymentStatus;
       if (refundId) cancelled.refundId = refundId;
     }
 

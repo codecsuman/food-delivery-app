@@ -6,6 +6,11 @@ import { logger } from "../utils/logger.js";
 import mongoose from "mongoose";
 import { isValidObjectId } from "../utils/objectId.js";
 import { refundOrderPayment } from "../services/orderRefunds.js";
+import {
+  paymentEvent,
+  paymentStatusOnCancellation,
+  paymentStatusAfterRefund,
+} from "../services/orderPayments.js";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["confirmed", "cancelled", "payment_failed"],
@@ -481,12 +486,31 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     }
 
     const isCancelling = newStatus === "cancelled";
+    const isDelivered = newStatus === "delivered";
     const initialRefundStatus =
       isCancelling &&
       order.paymentMethod === "stripe" &&
       order.paymentIntentId
         ? "pending"
         : "not_applicable";
+
+    const cancellationPaymentStatus = isCancelling
+      ? paymentStatusOnCancellation(order)
+      : undefined;
+
+    // One audit entry per transition. COD cash is only "collected" when the
+    // restaurant marks the order delivered.
+    const auditEvent = isCancelling
+      ? paymentEvent(
+          initialRefundStatus === "pending"
+            ? "refund_requested"
+            : "cancellation",
+          cancellationPaymentStatus!,
+          { amount: order.totalAmount, note: "Cancelled by restaurant" },
+        )
+      : isDelivered && order.paymentMethod === "cod"
+        ? paymentEvent("cod_collected", "paid", { amount: order.totalAmount })
+        : null;
 
     // Conditional update: an auto-cancel worker (or another dashboard tab) may
     // have changed the status since we read it. Losing that race is a conflict,
@@ -502,9 +526,14 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
                 cancelledAt: new Date(),
                 cancelledBy: "restaurant",
                 refundStatus: initialRefundStatus,
+                paymentStatus: cancellationPaymentStatus,
               }
             : {}),
+          ...(isDelivered && order.paymentMethod === "cod"
+            ? { paymentStatus: "paid" }
+            : {}),
         },
+        ...(auditEvent ? { $push: { paymentEvents: auditEvent } } : {}),
       },
       { new: true },
     );
@@ -522,17 +551,44 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
         "requested_by_customer",
       );
 
+      const nextPaymentStatus =
+        outcome.status === "not_applicable"
+          ? "unpaid"
+          : paymentStatusAfterRefund(
+              cancellationPaymentStatus ?? "unpaid",
+              outcome.status,
+            );
+
       await Order.updateOne(
         { _id: updatedOrder._id },
         {
           $set: {
             refundStatus: outcome.status,
+            paymentStatus: nextPaymentStatus,
             ...(outcome.refundId ? { refundId: outcome.refundId } : {}),
+          },
+          $push: {
+            paymentEvents: paymentEvent(
+              outcome.status === "refunded"
+                ? "refund_succeeded"
+                : outcome.status === "failed"
+                  ? "refund_failed"
+                  : "cancellation",
+              nextPaymentStatus,
+              {
+                amount: updatedOrder.totalAmount,
+                ...(outcome.refundId ? { providerId: outcome.refundId } : {}),
+                ...(outcome.error
+                  ? { note: outcome.error.slice(0, 300) }
+                  : {}),
+              },
+            ),
           },
         },
       );
 
       updatedOrder.refundStatus = outcome.status;
+      updatedOrder.paymentStatus = nextPaymentStatus;
       if (outcome.refundId) updatedOrder.refundId = outcome.refundId;
     }
 

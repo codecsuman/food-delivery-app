@@ -12,7 +12,7 @@ import mongoose from "mongoose";
 // ======================= ADD MENU =======================
 export const addMenu = async (req: Request, res: Response) => {
   try {
-    const { name, description, price, restaurantId } = req.body;
+    const { name, description, price, restaurantId, isAvailable } = req.body;
     const file = req.file;
 
     if (!name || !description || price === undefined || price === null || price === "") {
@@ -52,6 +52,7 @@ export const addMenu = async (req: Request, res: Response) => {
       image: cloudResponse.secure_url,
       imagePublicId: cloudResponse.public_id,
       restaurant: restaurant._id,
+      ...(isAvailable !== undefined ? { isAvailable } : {}),
     });
 
     restaurant.menus.push(menu._id as any);
@@ -64,6 +65,7 @@ export const addMenu = async (req: Request, res: Response) => {
       price: menu.price,
       image: menu.image,
       restaurant: restaurant._id.toString(),
+      isAvailable: menu.isAvailable,
     };
 
     return res.status(201).json({
@@ -82,7 +84,7 @@ export const addMenu = async (req: Request, res: Response) => {
 export const editMenu = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, price } = req.body;
+    const { name, description, price, isAvailable } = req.body;
     const file = req.file;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -114,6 +116,7 @@ export const editMenu = async (req: Request, res: Response) => {
     if (name !== undefined) menu.name = name.trim();
     if (description !== undefined) menu.description = description.trim();
     if (price !== undefined) menu.price = Number(price);
+    if (isAvailable !== undefined) menu.isAvailable = isAvailable;
 
     if (file) {
       if (menu.imagePublicId) {
@@ -136,12 +139,75 @@ export const editMenu = async (req: Request, res: Response) => {
       price: menu.price,
       image: menu.image,
       restaurant: menu.restaurant.toString(),
+      isAvailable: menu.isAvailable,
     };
 
     return res.status(200).json({
       success: true,
       message: "Menu updated successfully",
       menu: menuResponse,
+    });
+  } catch {
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ======================= TOGGLE MENU AVAILABILITY =======================
+// Lightweight endpoint for the owner dashboard: no image upload, no need to
+// resend the whole dish. Turning a dish off never touches existing orders.
+export const updateMenuAvailability = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { isAvailable } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid menu ID",
+      });
+    }
+
+    if (typeof isAvailable !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "isAvailable must be a boolean",
+      });
+    }
+
+    const menu = await Menu.findById(id);
+    if (!menu) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu not found",
+      });
+    }
+
+    const ownsMenuRestaurant = await Restaurant.exists({
+      _id: menu.restaurant,
+      user: req.id,
+    });
+    if (!ownsMenuRestaurant) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to edit this menu item",
+      });
+    }
+
+    menu.isAvailable = isAvailable;
+    await menu.save();
+
+    return res.status(200).json({
+      success: true,
+      message: isAvailable
+        ? "Menu item is now available"
+        : "Menu item marked unavailable",
+      menu: {
+        _id: menu._id,
+        name: menu.name,
+        isAvailable: menu.isAvailable,
+      },
     });
   } catch {
     return res

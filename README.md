@@ -63,7 +63,7 @@
 
 ## 📝 About
 
-**Suman Food** is a production-ready, full-stack food ordering and restaurant management system. Any user can spin up their own restaurant storefront, drop a pin on a map to set their exact location, manage a menu, and start taking orders — while customers browse, search, checkout with **Stripe or Cash on Delivery**, and watch their order move live on a map from the restaurant to their door.
+**Suman Food** is a full-stack food ordering and restaurant management system built on the MERN stack. Any user can spin up their own restaurant storefront, drop a pin on a map to set their exact location, manage a menu, and start taking orders — while customers browse, search, checkout with **Stripe or Cash on Delivery**, and watch their order move live on a map from the restaurant to their door.
 
 <div align="center">
 
@@ -92,6 +92,8 @@
 - 🗂️ Active vs Past orders, separated into tabs
 - 🔁 Reorder from a past order in one click
 - ⭐ Leave star ratings & written reviews on restaurants
+- 🧾 View or print an itemised receipt for any order
+- 🛠️ Report an order problem (missing item, cold food, late delivery, etc.) and follow its resolution
 - ⚡ "Order Now" button on menu items — skip the cart, go straight to checkout
 - 🌟 Browse featured restaurants & menu items on the home page carousel
 - 🌗 Light / Dark mode toggle
@@ -104,11 +106,13 @@
 - 🏪 Create & manage your own restaurant
 - 📍 **Set your exact location by dragging a pin on a map** (or one-tap "Use My Location") — powers accurate delivery distance and live tracking for your customers
 - 📋 Add / edit / delete menu items with images
+- 🚫 Mark a dish **sold out** instantly without deleting it — checkout rejects unavailable items
 - 🖼️ Cloudinary-powered image uploads
 - 📬 Manage incoming orders live, including COD orders
 - 💳 Secure Stripe payment processing with webhook-verified confirmation
+- 🛠️ Triage customer issue reports (open → in review → resolved/rejected)
+- 📊 Sales analytics per restaurant — orders, revenue, refunds, top items and daily totals
 - 🌟 Mark restaurants/menu items as "Featured" for home page placement
-- 🚴 Assign a real delivery partner (driver role) to an order
 - 🧭 Dedicated owner navbar — Dashboard / My Restaurants / Orders
 - 📊 Full admin dashboard
 
@@ -118,9 +122,55 @@
 
 <br/>
 
+## 🛡️ Production Hardening (latest)
+
+This release hardens the existing flows without changing existing API contracts or the UI. The server-side changes below are additive and covered by automated tests.
+
+| Area | Change |
+|---|---|
+| **Stripe webhook dedupe** | Processed events are stored in MongoDB (`webhook_events`) with a unique `eventId` index, a 30-day TTL and a retryable `failed` state — a restart or a second server instance can no longer replay analytics/confirmation side effects. |
+| **Payment state** | Orders now carry `paymentStatus` (`unpaid`, `pending`, `paid`, `failed`, `refunded`, `partially_refunded`, `not_required`) separately from fulfilment `status`, plus an append-only `paymentEvents[]` audit trail. |
+| **CSRF hardening** | `POST`/`PUT`/`PATCH`/`DELETE` requests with a browser `Origin`/`Referer` must match `FRONTEND_URL` (or the API host). The Stripe webhook is exempt because it is signature-authenticated. |
+| **CI** | `.github/workflows/ci.yml` runs `tsc --noEmit` and the full server test suite, then type-checks and builds the client. `.github/` is no longer git-ignored. |
+| **Signup validation** | Non-numeric/object `contact` values now return `400` instead of persisting `NaN` and producing a `500`. Privilege fields (`admin`, `role`, `isDriver`) are still ignored. |
+| **Observability** | Every response carries `X-Request-Id` (inbound ids are honoured when well-formed); requests ≥ `SLOW_REQUEST_MS` log at `warn`, 5xx at `error`. `/health` exposes `timestamp`, `version` and a `checks` summary. |
+| **Dish availability** | `Menu.isAvailable` defaults to `true` (existing dishes stay orderable), with an owner-only `PATCH /menu/:id/availability` toggle. Checkout rejects sold-out items. |
+| **Receipts** | `GET /order/:id/receipt` returns a structured, printable receipt for the customer, restaurant owner or admin. |
+| **Issue reporting** | Customers can report order problems; owners get a per-restaurant queue with guarded status transitions. |
+| **Owner analytics** | `GET /restaurant/:id/analytics?range=7d\|30d\|90d\|all` returns orders, revenue, refunds, payment breakdown, top items and a daily series. |
+
+### One-time migrations (safe, idempotent)
+
+Both scripts are **dry runs by default** and only touch documents that are missing the new field:
+
+```bash
+cd server
+npm run backfill:payments        # dry run — shows how many orders lack paymentStatus
+npm run backfill:payments -- --apply
+npm run backfill:menus           # dry run — shows how many dishes lack isAvailable
+npm run backfill:menus -- --apply
+```
+
+`isAvailable` and `paymentStatus` also have safe defaults, so the app keeps working before the backfill is run; the scripts make historical data consistent for filtering/analytics.
+
+### Verification commands
+
+```bash
+cd server
+npm run typecheck     # tsc --noEmit
+npm test              # vitest (MongoDB memory replica set)
+
+cd ../client
+npm run build          # tsc -b && vite build
+```
+
+> Note: the client currently has pre-existing ESLint findings (mostly `any`), so CI gates the production build but not `npm run lint` yet.
+
+<br/>
+
 ## 🆕 What's New
 
-This update is a full production-readiness pass — real-time tracking, accurate geolocation, and cross-origin deployment fixes on top of the original checkout flow.
+This update is a hardening pass — durable payment/webhook state, CSRF hardening, observability, CI, and additive owner tools — on top of the original real-time tracking and checkout flow.
 
 | Area | Before | Now |
 |---|---|---|
@@ -175,26 +225,27 @@ This update is a full production-readiness pass — real-time tracking, accurate
 
 ```
 food-delivery-app/
+├── .github/workflows/ci.yml     # CI: server typecheck + tests, client build
 ├── client/                      # React + Vite + TypeScript frontend
 │   ├── src/
 │   │   ├── components/          # Reusable UI components (shadcn/ui based)
-│   │   ├── pages/                # Route-level pages (Home, Dashboard, Orders, etc.)
-│   │   ├── store/                # Zustand state stores (user, restaurant, order, cart)
-│   │   ├── lib/                  # Axios instance, socket client, helpers
+│   │   ├── pages/               # Route-level pages (Home, Dashboard, Orders, etc.)
+│   │   ├── store/               # Zustand state stores (user, restaurant, order, cart)
+│   │   ├── lib/                 # Axios instance, socket client, helpers
 │   │   └── App.tsx
-│   ├── .env
 │   └── package.json
 │
 ├── server/                      # Node.js + Express + TypeScript backend
-│   ├── src/
-│   │   ├── controllers/          # Route handlers (user, restaurant, menu, order, map)
-│   │   ├── models/                # Mongoose schemas
-│   │   ├── routes/                # Express routers
-│   │   ├── middlewares/           # Auth, error handling
-│   │   ├── sockets/                # Socket.IO event handlers (live tracking)
-│   │   └── index.ts
-│   ├── .env
-│   └── package.json
+│   ├── controller/              # Route handlers (user, restaurant, menu, order, issue, analytics)
+│   ├── models/                  # Mongoose schemas
+│   ├── routes/                  # Express routers
+│   ├── middlewares/             # Auth, origin guard, request logging, validation
+│   ├── services/                # Pricing, refunds, auto-cancel, webhook dedupe
+│   ├── socketHandlers/          # Socket.IO live tracking
+│   ├── schemas/                 # Zod request validation
+│   ├── scripts/                 # Idempotent backfill migrations
+│   ├── tests/                   # Vitest suites (MongoDB memory replica set)
+│   └── index.ts
 │
 └── README.md
 ```
@@ -295,6 +346,12 @@ OPENCAGE_API_KEY=your_opencage_api_key
 DELIVERY_SPEED_KM_PER_MIN=0.333
 MAX_DELIVERY_RADIUS_KM=10
 MIN_ORDER_AMOUNT=50
+
+# =========================
+# OBSERVABILITY (optional)
+# =========================
+# Requests slower than this are logged at warn level (default 1000 ms)
+SLOW_REQUEST_MS=1000
 ```
 
 > ⚠️ **`NODE_ENV` must be set as a real environment variable on your hosting platform's dashboard (Render, Railway, etc.) — not just in a local `.env` file.** Node only loads `.env` via `dotenv`; it never reads `.env.production` automatically. Cookie security (`secure` + `sameSite: "none"`) depends entirely on `NODE_ENV === "production"` being true at runtime — if it isn't set correctly, cross-origin login will silently fail with a `401` on the very next request after login.
@@ -363,10 +420,12 @@ Placed → Confirmed → Preparing → On the Way → Delivered
    └── Payment Failed (Stripe orders only, via webhook)
 ```
 
-- **Stripe orders** move to `Confirmed` once the `checkout.session.completed` webhook fires; a failed payment attempt is caught by `payment_intent.payment_failed` and marks the order `payment_failed`.
-- **COD orders** skip the Stripe round-trip entirely and are created directly with `status: "confirmed"`.
+- **Stripe orders** move to `Confirmed` once the `checkout.session.completed` webhook fires; a failed payment attempt is caught by `payment_intent.payment_failed` and marks the order `payment_failed`. Async methods are confirmed by `checkout.session.async_payment_succeeded`, and `checkout.session.expired` cancels an unpaid order.
+- **COD orders** skip the Stripe round-trip entirely and are created directly with `status: "confirmed"`. Their `paymentStatus` becomes `paid` when the owner marks the order delivered.
 - **Cancellation** is only allowed while an order is still `pending` or `confirmed`. Cancelling a paid Stripe order automatically triggers a refund; cancelling a COD order simply updates its status.
+- **Payment state is independent of fulfilment state.** `status: "cancelled"` can coexist with `paymentStatus: "refunded"` (money returned) or `"not_required"` (COD never collected). Every transition is appended to `paymentEvents[]`.
 - **"On the Way"** status enables live map tracking — the customer sees the driver's position update in real time via Socket.IO, along with a live ETA and remaining distance.
+- **Webhook processing is idempotent and durable.** The same Stripe event is only applied once, even across restarts or multiple instances.
 
 <br/>
 
@@ -398,6 +457,7 @@ Placed → Confirmed → Preparing → On the Way → Delivered
 | GET | `/api/v1/restaurant/search/:searchText` | Search restaurants (path text) |
 | GET | `/api/v1/restaurant/search` | Search restaurants (query params + filters) |
 | GET | `/api/v1/restaurant/filters` | Get distinct cuisines & dish names for filter UI |
+| GET | `/api/v1/restaurant/:restaurantId/analytics` | Owner: sales analytics (`range=7d\|30d\|90d\|all`) |
 | GET | `/api/v1/restaurant/:id` | Get single restaurant |
 | DELETE | `/api/v1/restaurant/:id` | Delete restaurant |
 
@@ -410,8 +470,9 @@ Placed → Confirmed → Preparing → On the Way → Delivered
 |--------|----------|--------------|
 | POST | `/api/v1/menu/` | Add menu item |
 | PUT | `/api/v1/menu/:id` | Edit menu item |
+| PATCH | `/api/v1/menu/:id/availability` | Toggle a dish's `isAvailable` flag (owner only) |
 | DELETE | `/api/v1/menu/:id` | Delete menu item |
-| GET | `/api/v1/menu/restaurant/:id` | Get menu by restaurant |
+| GET | `/api/v1/menu/restaurant/:id` | Get menu by restaurant (includes `isAvailable`) |
 
 </details>
 
@@ -420,12 +481,34 @@ Placed → Confirmed → Preparing → On the Way → Delivered
 
 | Method | Endpoint | Description |
 |--------|----------|--------------|
-| POST | `/api/v1/order/checkout` | Create an order — `paymentMethod: "stripe"` starts a Checkout session (enforces `MIN_ORDER_AMOUNT`), `paymentMethod: "cod"` confirms the order immediately |
-| POST | `/api/v1/order/webhook` | Stripe webhook — handles `checkout.session.completed` and `payment_intent.payment_failed` |
+| POST | `/api/v1/order/checkout/create-checkout-session` | Create an order — `paymentMethod: "stripe"` starts a Checkout session (enforces `MIN_ORDER_AMOUNT`), `paymentMethod: "cod"` confirms the order immediately |
+| POST | `/api/v1/order/webhook` | Stripe webhook — idempotent, durable dedupe; handles checkout completion, async success, expiry and failed payments |
 | GET | `/api/v1/order/` | Get my orders (restaurant location included for map tracking) |
 | GET | `/api/v1/order/:orderId` | Get single order by ID |
+| GET | `/api/v1/order/:orderId/receipt` | Structured receipt (customer, restaurant owner or admin) |
 | GET | `/api/v1/order/session/:sessionId` | Get order by Stripe session ID (used on redirect back from Stripe) |
 | POST | `/api/v1/order/:orderId/cancel` | Cancel an order — ownership + status checks, automatic Stripe refund for paid orders |
+
+</details>
+
+<details>
+<summary><b>🛠️ Order Issues</b></summary>
+
+| Method | Endpoint | Description |
+|--------|----------|--------------|
+| POST | `/api/v1/issue/` | Report an issue for one of my orders (`missing_item`, `wrong_item`, `cold_food`, `late_delivery`, `payment`, `hygiene`, `other`) |
+| GET | `/api/v1/issue/my` | List my reported issues (paginated) |
+| GET | `/api/v1/issue/restaurant/:restaurantId` | Owner: list issues for my restaurant (optional `status` filter) |
+| PATCH | `/api/v1/issue/:issueId/status` | Owner/admin: `open → in_review → resolved/rejected` with an optional resolution note |
+
+</details>
+
+<details>
+<summary><b>📊 Owner Analytics</b></summary>
+
+| Method | Endpoint | Description |
+|--------|----------|--------------|
+| GET | `/api/v1/restaurant/:restaurantId/analytics?range=7d\|30d\|90d\|all` | Orders, revenue, refunds, payment breakdown, top items and daily totals (owner only) |
 
 </details>
 
@@ -445,19 +528,26 @@ All map routes require authentication.
 
 ## 🗺 Roadmap
 
-All previously planned features have now shipped. 🎉
-
 <details>
-<summary><b>✅ Recently shipped</b></summary>
+<summary><b>✅ Shipped</b></summary>
 
+- [x] Durable Stripe webhook dedupe (MongoDB, unique event id, 30-day TTL)
+- [x] `paymentStatus` + append-only `paymentEvents[]` audit trail
+- [x] Origin/Referer protection for cookie-authenticated mutations
+- [x] CI: server typecheck + tests, client production build
+- [x] Signup input hardening (`contact` no longer becomes `NaN`)
+- [x] Correlation ids, slow-request warnings and richer `/health`
+- [x] Per-dish availability (`isAvailable`) with a safe default and owner toggle
+- [x] Structured order receipts
+- [x] Customer issue reporting + owner resolution queue
+- [x] Owner sales analytics (orders, revenue, refunds, top items, daily series)
 - [x] **Featured Restaurants & Menu Items** — restaurant owners can mark items/restaurants as "Featured," surfaced in a home page carousel
 - [x] Separate navbar views for restaurant owners (Dashboard/My Restaurants/Orders) vs. regular customers (Home/Explore/Orders)
 - [x] "Order Now" button on menu items — skips the cart and goes straight to checkout for a single item
 - [x] Customer reviews — star ratings & comments on restaurants
 - [x] Success animation on profile update confirmation
-- [x] Delivery partner assignment as a real driver role (replaces simulated/manual location updates)
 - [x] Restaurant geolocation via drag-a-pin map (replaces missing/`[0,0]` coordinates)
-- [x] Real-time order tracking with live map, driver position, ETA, and route (Socket.IO + Leaflet)
+- [x] Real-time order tracking with live map, simulated driver position, ETA, and route (Socket.IO + Leaflet)
 - [x] Stripe minimum-order-amount validation, preventing checkout failures on small carts
 - [x] Order/Stripe-session sequencing fix — no more orphaned pending orders
 - [x] Correct failed-payment webhook matching via PaymentIntent metadata
@@ -466,6 +556,17 @@ All previously planned features have now shipped. 🎉
 - [x] Cash on Delivery (COD) as a payment option alongside Stripe
 - [x] Order cancellation with automatic Stripe refunds
 - [x] Order status tracking with an animated progress bar
+
+</details>
+
+<details>
+<summary><b>🔜 Not yet implemented</b></summary>
+
+- [ ] **Real driver subsystem** — driver accounts, assignment/accept/reject, and a driver-facing app. Tracking currently uses simulated position updates; the order schema has no `driver` field.
+- [ ] **Client screens** for receipts, issue reporting and owner analytics. The backend endpoints are live and tested; the existing UI does not call them yet.
+- [ ] PDF/email receipts — the endpoint returns structured JSON, which the client can render or print.
+- [ ] Restaurant opening hours and scheduled dish availability (manual `isAvailable` is available now).
+- [ ] Server-side ESLint gate (the client already has ESLint; its existing findings need cleanup first).
 
 </details>
 
@@ -577,7 +678,11 @@ Confirm the order's restaurant document actually has `location.coordinates` set 
 - Authentication uses HTTP-only JWT cookies — tokens are inaccessible to client-side JavaScript, reducing XSS exposure.
 - Cookies are issued with `secure: true` and `sameSite: "none"` in production, and `sameSite: "lax"` in development.
 - Stripe webhook payloads are verified against `WEBHOOK_ENDPOINT_SECRET` before being trusted — unsigned or tampered requests are rejected.
-- Order and tracking routes check resource ownership server-side (a customer cannot view or cancel another customer's order).
+- Webhook processing is idempotent and durable: a unique `eventId` in MongoDB prevents replays across restarts or multiple instances, and failed events are retried safely.
+- Cookie-authenticated mutations (`POST`/`PUT`/`PATCH`/`DELETE`) with a browser `Origin`/`Referer` must match `FRONTEND_URL` (or the API host). Requests with neither header — server-to-server, mobile, CLI — still require a valid session cookie. The Stripe webhook is signature-authenticated and exempt.
+- Payments are tracked independently from fulfilment: `paymentStatus` plus an append-only `paymentEvents[]` trail records initiation, success, failure, cancellation and refund outcomes.
+- Signup input is validated server-side; `admin`/`role`/`isDriver` fields are ignored, and malformed contact values return `400` rather than causing a `500`.
+- Order and tracking routes check resource ownership server-side (a customer cannot view or cancel another customer's order); receipts and analytics use the same ownership checks.
 - Environment files (`.env`) are git-ignored; never commit real API keys or secrets — rotate any credential that was ever pushed to a public repo.
 
 Found a security issue? Please open a private report rather than a public issue — see [Contributing](#-contributing) for contact details.

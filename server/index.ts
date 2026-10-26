@@ -42,7 +42,18 @@ if (process.env.SECRET_KEY!.length < 32) {
 }
 
 // Validate FRONTEND_URL format
-const allowedOrigins = process.env.FRONTEND_URL!.split(",").map((o) => o.trim()).filter(Boolean);
+const allowedOrigins = process.env.FRONTEND_URL!.split(",")
+  .map((o) => o.trim())
+  .filter(Boolean)
+  // Normalise away trailing slashes/paths so `https://app.example.com/`
+  // matches the browser's `Origin: https://app.example.com`.
+  .map((o) => {
+    try {
+      return new URL(o).origin;
+    } catch {
+      return o;
+    }
+  });
 for (const origin of allowedOrigins) {
   try {
     new URL(origin);
@@ -66,6 +77,7 @@ import menuRoute from "./routes/menu.route.js";
 import orderRoute from "./routes/order.route.js";
 import reviewRoute from "./routes/review.route.js";
 import mapRoute from "./routes/map.route.js";
+import issueRoute from "./routes/issue.route.js";
 import { setupTrackingSocket } from "./socketHandlers/trackingSocket.js";
 import bodyParser from "body-parser";
 import { stripeWebhook } from "./controller/order.controller.js";
@@ -73,6 +85,8 @@ import { logger } from "./utils/logger.js";
 import { getTransactionSupport } from "./utils/transactions.js";
 import { apiRateLimiter } from "./middlewares/rateLimit.js";
 import { sanitizeBody } from "./middlewares/validate.js";
+import { verifyRequestOrigin } from "./middlewares/verifyOrigin.js";
+import { requestLogger } from "./middlewares/requestLogger.js";
 import { startAutoCancelJob } from "./services/autoCancelOrders.js";
 
 const app = express();
@@ -145,6 +159,8 @@ app.use(
   cors({
     origin: corsOriginCheck,
     credentials: true,
+    // Let browser clients read the correlation id for support/debugging.
+    exposedHeaders: ["X-Request-Id"],
   })
 );
 
@@ -159,29 +175,15 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 app.use(sanitizeBody);
+// Reject cookie-authenticated cross-site mutations unless the Origin/Referer
+// matches the configured frontend. See middlewares/verifyOrigin.ts.
+app.use(verifyRequestOrigin);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Request logging
-app.use((req: Request, _res: Response, next) => {
-  const start = Date.now();
-  const requestId = Math.random().toString(36).substring(7);
-  (req as any).requestId = requestId;
-
-  logger.info(
-    { method: req.method, path: req.path, ip: req.ip, requestId },
-    "Incoming request"
-  );
-
-  _res.on("finish", () => {
-    const duration = Date.now() - start;
-    logger.info(
-      { method: req.method, path: req.path, statusCode: _res.statusCode, duration, requestId },
-      "Request completed"
-    );
-  });
-
-  next();
-});
+// Request logging with a correlation id. The id is echoed in the response so a
+// browser/network trace can be matched to server logs, and slow requests are
+// surfaced at warn level instead of drowning in normal INFO volume.
+app.use(requestLogger);
 
 // =========================
 // ROUTES
@@ -192,6 +194,7 @@ app.use("/api/v1/menu", menuRoute);
 app.use("/api/v1/order", orderRoute);
 app.use("/api/v1/review", reviewRoute);
 app.use("/api/v1/map", mapRoute);
+app.use("/api/v1/issue", issueRoute);
 
 // =========================
 // HEALTH CHECK
@@ -217,6 +220,13 @@ app.get("/health", async (_req: Request, res: Response) => {
     transactions,
     uptime: process.uptime(),
     memory: process.memoryUsage(),
+    // Additive fields for ops dashboards; existing consumers keep working.
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version || "1.0.0",
+    checks: {
+      database: dbStatus,
+      transactions: transactions.supported ? "supported" : "fallback",
+    },
   });
 });
 
@@ -232,7 +242,13 @@ app.use((_req: Request, res: Response) => {
 // =========================
 app.use((err: any, req: Request, res: Response, _next: any) => {
   logger.error(
-    { err: err.message, stack: err.stack, path: req.path, method: req.method },
+    {
+      err: err.message,
+      stack: err.stack,
+      path: req.path,
+      method: req.method,
+      requestId: (req as any).requestId,
+    },
     "Unhandled error"
   );
 

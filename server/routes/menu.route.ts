@@ -8,9 +8,10 @@ import {
   getMenuByRestaurant,
   getAllMenus,
   getPopularMenus,
+  updateMenuAvailability,
 } from "../controller/menu.controller.js";
 import { validate } from "../middlewares/validate.js";
-import { addMenuSchema, updateMenuSchema, idParamSchema, restaurantIdParamSchema, paginationSchema } from "../schemas/validation.js";
+import { addMenuSchema, updateMenuSchema, updateMenuAvailabilitySchema, idParamSchema, restaurantIdParamSchema, paginationSchema } from "../schemas/validation.js";
 
 const router = express.Router();
 
@@ -25,6 +26,15 @@ router.post("/", isAuthenticated, upload.single("image"), validate(addMenuSchema
 
 // Edit menu item (any logged-in user — restaurant ownership checked in controller)
 router.put("/:id", isAuthenticated, upload.single("image"), validate(updateMenuSchema), validate(idParamSchema, "params"), editMenu);
+
+// Toggle dish availability (any logged-in user — restaurant ownership checked in controller)
+router.patch(
+  "/:id/availability",
+  isAuthenticated,
+  validate(updateMenuAvailabilitySchema),
+  validate(idParamSchema, "params"),
+  updateMenuAvailability
+);
 
 // Delete menu item (any logged-in user — restaurant ownership checked in controller)
 router.delete("/:id", isAuthenticated, validate(idParamSchema, "params"), deleteMenu);

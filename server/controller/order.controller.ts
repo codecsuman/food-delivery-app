@@ -9,26 +9,21 @@ import { runWithOptionalTransaction } from "../utils/transactions.js";
 import mapService from "../services/mapService.js";
 import { calculateDeliveryPricing } from "../services/deliveryPricing.js";
 import { refundOrderPayment } from "../services/orderRefunds.js";
+import {
+  claimWebhookEvent,
+  completeWebhookEvent,
+  failWebhookEvent,
+} from "../services/webhookEvents.js";
+import {
+  paymentEvent,
+  paymentStatusOnCancellation,
+  paymentStatusAfterRefund,
+} from "../services/orderPayments.js";
 import type { IOrder } from "../models/order.model.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 const MIN_ORDER_AMOUNT = Number(process.env.MIN_ORDER_AMOUNT) || 50;
-
-// In-memory store for processed webhook events
-// NOTE: In production, replace this with Redis and a TTL (e.g., 24 hours) to avoid memory leaks
-const processedWebhookEvents = new Map<string, number>();
-const EVENT_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-// Periodically clean up expired events to prevent memory leak
-setInterval(() => {
-  const now = Date.now();
-  for (const [eventId, timestamp] of processedWebhookEvents.entries()) {
-    if (now - timestamp > EVENT_EXPIRY_MS) {
-      processedWebhookEvents.delete(eventId);
-    }
-  }
-}, 60 * 60 * 1000); // Clean every hour
 
 interface VerifiedCartItem {
   menuId: string;
@@ -193,6 +188,13 @@ async function verifyCartPrices(
 
     if (!menuItem) {
       errors.push(`Menu item ${cartItem.menuId} not found`);
+      continue;
+    }
+
+    // An explicit `false` blocks the order. Missing/undefined keeps legacy
+    // documents (created before this field existed) orderable.
+    if (menuItem.isAvailable === false) {
+      errors.push(`"${menuItem.name}" is currently unavailable`);
       continue;
     }
 
@@ -541,6 +543,12 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
                   totalAmount,
                   status: "confirmed",
                   paymentMethod: "cod",
+                  paymentStatus: "unpaid",
+                  paymentEvents: [
+                    paymentEvent("cod_order_confirmed", "unpaid", {
+                      amount: totalAmount,
+                    }),
+                  ],
                   ...(idempotencyKey ? { idempotencyKey } : {}),
                 },
               ],
@@ -609,6 +617,10 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
       totalAmount,
       status: "pending",
       paymentMethod: "stripe",
+      paymentStatus: "unpaid",
+      paymentEvents: [
+        paymentEvent("payment_initiated", "unpaid", { amount: totalAmount }),
+      ],
       ...(idempotencyKey ? { idempotencyKey } : {}),
     });
 
@@ -704,6 +716,7 @@ export const cancelOrder = async (req: Request, res: Response) => {
       order.paymentMethod === "stripe" && order.paymentIntentId
         ? "pending"
         : "not_applicable";
+    const cancellationPaymentStatus = paymentStatusOnCancellation(order);
 
     const cancelled = await Order.findOneAndUpdate(
       { _id: order._id, user: req.id, status: order.status },
@@ -714,6 +727,14 @@ export const cancelOrder = async (req: Request, res: Response) => {
           cancelledAt: new Date(),
           cancelledBy: "customer",
           refundStatus: initialRefundStatus,
+          paymentStatus: cancellationPaymentStatus,
+        },
+        $push: {
+          paymentEvents: paymentEvent(
+            initialRefundStatus === "pending" ? "refund_requested" : "cancellation",
+            cancellationPaymentStatus,
+            { amount: order.totalAmount, note: "Cancelled by customer" },
+          ),
         },
       },
       { new: true },
@@ -729,17 +750,41 @@ export const cancelOrder = async (req: Request, res: Response) => {
     if (initialRefundStatus === "pending") {
       const outcome = await refundOrderPayment(cancelled, "requested_by_customer");
 
+      const nextPaymentStatus =
+        outcome.status === "not_applicable"
+          ? "unpaid"
+          : paymentStatusAfterRefund(cancellationPaymentStatus, outcome.status);
+
       await Order.updateOne(
         { _id: cancelled._id },
         {
           $set: {
             refundStatus: outcome.status,
+            paymentStatus: nextPaymentStatus,
             ...(outcome.refundId ? { refundId: outcome.refundId } : {}),
+          },
+          $push: {
+            paymentEvents: paymentEvent(
+              outcome.status === "refunded"
+                ? "refund_succeeded"
+                : outcome.status === "failed"
+                  ? "refund_failed"
+                  : "cancellation",
+              nextPaymentStatus,
+              {
+                amount: cancelled.totalAmount,
+                ...(outcome.refundId ? { providerId: outcome.refundId } : {}),
+                ...(outcome.error
+                  ? { note: outcome.error.slice(0, 300) }
+                  : {}),
+              },
+            ),
           },
         },
       );
 
       cancelled.refundStatus = outcome.status;
+      cancelled.paymentStatus = nextPaymentStatus;
       if (outcome.refundId) cancelled.refundId = outcome.refundId;
     }
 
@@ -753,6 +798,119 @@ export const cancelOrder = async (req: Request, res: Response) => {
     });
   } catch {
     return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ======================= ORDER RECEIPT =======================
+/**
+ * Structured receipt data for one order. Authorised for the customer who
+ * placed it, the restaurant owner, and admins. Returns JSON (no PDF
+ * dependency): the client can render/print it, and it contains only data the
+ * caller is already allowed to see.
+ */
+export const getOrderReceipt = async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid order ID" });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+    }
+
+    const restaurant = await Restaurant.findById(order.restaurant).select(
+      "user restaurantName contact",
+    );
+
+    const isCustomer = order.user.toString() === req.id;
+    const isRestaurantOwner = restaurant?.user?.toString() === req.id;
+
+    if (!isCustomer && !isRestaurantOwner && !req.admin) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to view this receipt",
+      });
+    }
+
+    const round2 = (value: number) => Math.round(value * 100) / 100;
+
+    const items = order.cartItems.map((item) => ({
+      menuId: item.menuId,
+      name: item.name,
+      quantity: item.quantity,
+      unitPrice: round2(item.price),
+      lineTotal: round2(item.price * item.quantity),
+    }));
+
+    const subtotal = round2(
+      order.subtotal ?? items.reduce((sum, item) => sum + item.lineTotal, 0),
+    );
+    const deliveryFee = round2(order.deliveryFee ?? 0);
+    const totalAmount = round2(order.totalAmount ?? subtotal + deliveryFee);
+
+    const receiptDate = order.createdAt.toISOString().slice(0, 10);
+    const receiptNumber = `SF-${receiptDate.replace(/-/g, "")}-${order._id
+      .toString()
+      .slice(-6)
+      .toUpperCase()}`;
+
+    return res.status(200).json({
+      success: true,
+      receipt: {
+        receiptNumber,
+        issuedAt: new Date().toISOString(),
+        orderId: order._id,
+        orderDate: order.createdAt,
+        status: order.status,
+        currency: "INR",
+        customer: {
+          name: order.deliveryDetails.name,
+          email: order.deliveryDetails.email,
+          address: order.deliveryDetails.address,
+          city: order.deliveryDetails.city,
+          state: order.deliveryDetails.state ?? null,
+          country: order.deliveryDetails.country ?? null,
+          pincode: order.deliveryDetails.pincode,
+        },
+        restaurant: {
+          id: restaurant?._id ?? order.restaurant,
+          name:
+            order.restaurantName || restaurant?.restaurantName || "Restaurant",
+          contact: order.restaurantContact ?? restaurant?.contact ?? null,
+        },
+        items,
+        totals: {
+          subtotal,
+          deliveryFee,
+          total: totalAmount,
+        },
+        payment: {
+          method: order.paymentMethod ?? null,
+          status: order.paymentStatus ?? "unpaid",
+          refundStatus: order.refundStatus ?? "not_applicable",
+        },
+        cancellation:
+          order.status === "cancelled"
+            ? {
+                at: order.cancelledAt ?? null,
+                by: order.cancelledBy ?? null,
+                reason: order.cancellationReason ?? null,
+              }
+            : null,
+      },
+    });
+  } catch (error) {
+    logger.error({ err: error }, "Order receipt generation failed");
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
   }
 };
 
@@ -773,8 +931,28 @@ export const stripeWebhook = async (req: Request, res: Response) => {
     return res.status(400).send(`Webhook error: ${error.message}`);
   }
 
-  if (processedWebhookEvents.has(event.id)) {
-    logger.info({ eventId: event.id, type: event.type }, "Duplicate webhook event ignored");
+  // Claim the event durably before doing any work. Exactly one delivery wins;
+  // a restart or a second instance can no longer replay side effects.
+  const ack = async () => {
+    await completeWebhookEvent(event.id);
+    return res.status(200).send();
+  };
+
+  let claim;
+  try {
+    claim = await claimWebhookEvent(event.id, event.type);
+  } catch (error) {
+    // If the durable dedupe store is unavailable we must not acknowledge the
+    // event; a 500 lets Stripe redeliver it later.
+    logger.error({ err: error, eventId: event.id }, "Webhook claim failed");
+    return res.status(500).send("Webhook processing failed");
+  }
+
+  if (!claim.claimed) {
+    logger.info(
+      { eventId: event.id, type: event.type, reason: claim.reason },
+      "Webhook event already handled or in progress"
+    );
     return res.status(200).send();
   }
 
@@ -788,7 +966,7 @@ export const stripeWebhook = async (req: Request, res: Response) => {
 
       if (!orderId) {
         logger.warn({ eventId: event.id }, "Webhook missing orderId metadata");
-        return res.status(200).send();
+        return ack();
       }
 
       // Card payments are synchronous, but async payment methods can emit
@@ -807,19 +985,19 @@ export const stripeWebhook = async (req: Request, res: Response) => {
           { eventId: event.id, orderId, paymentStatus },
           "Checkout session completed without a captured payment",
         );
-        return res.status(200).send();
+        return ack();
       }
 
       const order = await Order.findById(orderId);
       if (!order) {
         logger.warn({ eventId: event.id, orderId }, "Webhook: order not found");
-        return res.status(200).send();
+        return ack();
       }
 
       // Only process if still pending (idempotency)
       if (order.status !== "pending") {
         logger.info({ eventId: event.id, orderId, status: order.status }, "Order already processed");
-        return res.status(200).send();
+        return ack();
       }
 
       // Verify amount matches
@@ -837,6 +1015,8 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         totalAmount: order.totalAmount,
         status: order.status,
         paymentIntentId: order.paymentIntentId,
+        paymentStatus: order.paymentStatus,
+        paymentEvents: (order.toObject() as any).paymentEvents ?? [],
       };
       const appliedMenuIds: string[] = [];
 
@@ -851,6 +1031,16 @@ export const stripeWebhook = async (req: Request, res: Response) => {
             order.totalAmount = (session.amount_total || expectedAmount) / 100;
             order.status = "confirmed";
             order.paymentIntentId = session.payment_intent as string;
+            order.paymentStatus = "paid";
+            order.paymentEvents = [
+              ...(order.paymentEvents ?? []),
+              paymentEvent("payment_succeeded", "paid", {
+                amount: order.totalAmount,
+                ...(session.payment_intent
+                  ? { providerId: String(session.payment_intent) }
+                  : {}),
+              }),
+            ];
             await order.save(sessionOptions);
 
             // Keep menu analytics in the same transaction when available.
@@ -870,6 +1060,8 @@ export const stripeWebhook = async (req: Request, res: Response) => {
               $set: {
                 totalAmount: previousState.totalAmount,
                 status: previousState.status,
+                paymentStatus: previousState.paymentStatus,
+                paymentEvents: previousState.paymentEvents,
                 ...(previousState.paymentIntentId
                   ? { paymentIntentId: previousState.paymentIntentId }
                   : {}),
@@ -885,14 +1077,11 @@ export const stripeWebhook = async (req: Request, res: Response) => {
           }
         );
 
-        // Mark event as processed
-        processedWebhookEvents.set(event.id, Date.now());
-
         logger.info({ eventId: event.id, orderId }, "Order confirmed via webhook");
       } catch (txnError) {
         logger.error({ err: txnError, orderId }, "Webhook confirmation failed");
-        // Don't mark as processed so it can be retried
-        return res.status(500).send("Webhook processing failed");
+        // Let the outer handler record the failure so Stripe can retry.
+        throw txnError;
       }
     }
 
@@ -906,6 +1095,15 @@ export const stripeWebhook = async (req: Request, res: Response) => {
 
       if (order && order.status === "pending") {
         order.status = "payment_failed";
+        order.paymentStatus = "failed";
+        order.paymentEvents = [
+          ...(order.paymentEvents ?? []),
+          paymentEvent("payment_failed", "failed", {
+            amount: order.totalAmount,
+            ...(paymentIntent.id ? { providerId: paymentIntent.id } : {}),
+            note: paymentIntent.last_payment_error?.message?.slice(0, 300),
+          }),
+        ];
         await order.save();
         logger.info({ orderId }, "Order marked as payment_failed");
       }
@@ -919,20 +1117,38 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         const order = await Order.findById(orderId);
         if (order && order.status === "pending") {
           order.status = "cancelled";
+          order.cancelledAt = new Date();
+          order.cancelledBy = "system";
+          order.cancellationReason = "Stripe checkout session expired";
+          order.paymentStatus = "unpaid";
+          order.paymentEvents = [
+            ...(order.paymentEvents ?? []),
+            paymentEvent("checkout_expired", "unpaid", {
+              amount: order.totalAmount,
+              ...(session.id ? { providerId: session.id } : {}),
+            }),
+          ];
           await order.save();
           logger.info({ orderId }, "Order cancelled due to expired checkout session");
         }
       }
     }
 
-    // Mark non-critical events as processed too
-    processedWebhookEvents.set(event.id, Date.now());
-
-    res.status(200).send();
+    // Non-critical / unhandled event types are recorded as processed too, so a
+    // redelivery does not re-run them.
+    return ack();
   } catch (error) {
     logger.error({ err: error, eventId: event.id }, "Webhook processing error");
-    // Don't mark as processed on error - allow retry
-    res.status(500).send("Webhook processing failed");
+    try {
+      await failWebhookEvent(event.id, error);
+    } catch (markError) {
+      // DB is probably down; still return 500 so Stripe retries.
+      logger.error(
+        { err: markError, eventId: event.id },
+        "Failed to record webhook failure"
+      );
+    }
+    return res.status(500).send("Webhook processing failed");
   }
 };
 

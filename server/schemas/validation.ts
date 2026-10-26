@@ -47,6 +47,13 @@ export const updateProfileSchema = z.object({
 // fields so `validate(...)` accepts the real payloads sent by the client.
 const multipartNumber = z.coerce.number();
 
+// Checkboxes/booleans also arrive as strings inside multipart/form-data.
+const multipartBoolean = z.preprocess((value) => {
+  if (value === "true" || value === "1" || value === 1) return true;
+  if (value === "false" || value === "0" || value === 0) return false;
+  return value;
+}, z.boolean());
+
 // `cuisines` is sent either as a real array (JSON requests/tests) or as a
 // JSON-encoded string inside FormData (the browser client).
 const cuisinesField = z.preprocess((value) => {
@@ -104,12 +111,18 @@ export const addMenuSchema = z.object({
   price: multipartNumber.pipe(z.number().min(0).max(100000)),
   // Optional: owners with multiple restaurants send the target restaurant.
   restaurantId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
+  isAvailable: multipartBoolean.optional(),
 });
 
 export const updateMenuSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   description: z.string().min(5).max(500).optional(),
   price: multipartNumber.pipe(z.number().min(0).max(100000)).optional(),
+  isAvailable: multipartBoolean.optional(),
+});
+
+export const updateMenuAvailabilitySchema = z.object({
+  isAvailable: multipartBoolean,
 });
 
 export const checkoutSchema = z.object({
@@ -240,6 +253,39 @@ export const stripeSessionIdParamSchema = z.object({
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+// ======================= ORDER ISSUES =======================
+export const createIssueSchema = z.object({
+  orderId: objectIdSchema,
+  type: z.enum([
+    "missing_item",
+    "wrong_item",
+    "cold_food",
+    "late_delivery",
+    "payment",
+    "hygiene",
+    "other",
+  ]),
+  description: z.string().min(10).max(1000),
+});
+
+export const updateIssueStatusSchema = z.object({
+  status: z.enum(["in_review", "resolved", "rejected"]),
+  resolutionNote: z.string().max(500).optional(),
+});
+
+export const issueIdParamSchema = z.object({ issueId: objectIdSchema });
+
+export const issueListQuerySchema = z.object({
+  status: z.enum(["open", "in_review", "resolved", "rejected"]).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+// ======================= OWNER ANALYTICS =======================
+export const analyticsQuerySchema = z.object({
+  range: z.enum(["7d", "30d", "90d", "all"]).optional(),
 });
 
 export const searchSchema = z.object({

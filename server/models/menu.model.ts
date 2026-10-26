@@ -9,6 +9,11 @@ export interface IMenu {
   restaurant: mongoose.Schema.Types.ObjectId;
   popular?: boolean;
   orderCount?: number;
+  /**
+   * Whether the dish can be ordered right now. Defaults to true so every
+   * existing menu item stays orderable after this field is introduced.
+   */
+  isAvailable?: boolean;
 }
 
 export interface IMenuDocument extends IMenu, Document {
@@ -55,6 +60,10 @@ const menuSchema = new mongoose.Schema<IMenuDocument>(
       default: 0,
       min: [0, "Order count cannot be negative"],
     },
+    isAvailable: {
+      type: Boolean,
+      default: true,
+    },
     restaurant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Restaurant",
@@ -71,5 +80,6 @@ menuSchema.index({ price: 1 });
 menuSchema.index({ restaurant: 1 });
 menuSchema.index({ popular: 1 });
 menuSchema.index({ orderCount: -1 });
+menuSchema.index({ restaurant: 1, isAvailable: 1 });
 
 export const Menu = mongoose.model<IMenuDocument>("Menu", menuSchema);

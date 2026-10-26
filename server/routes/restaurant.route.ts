@@ -12,10 +12,11 @@ import {
   deleteRestaurant,
   getFilterOptions,
 } from "../controller/restaurant.controller.js";
+import { getRestaurantAnalytics } from "../controller/analytics.controller.js";
 import upload from "../middlewares/multer.js";
 import { isAuthenticated, isAdmin } from "../middlewares/isAuthenticated.js";
 import { validate } from "../middlewares/validate.js";
-import { createRestaurantSchema, updateRestaurantSchema, updateOrderStatusSchema, idParamSchema, orderIdParamSchema, searchSchema, paginationSchema } from "../schemas/validation.js";
+import { createRestaurantSchema, updateRestaurantSchema, updateOrderStatusSchema, idParamSchema, orderIdParamSchema, searchSchema, paginationSchema, restaurantIdParamSchema, analyticsQuerySchema } from "../schemas/validation.js";
 
 const router = express.Router();
 
@@ -65,6 +66,15 @@ router.get("/search", validate(searchSchema, "query"), searchRestaurant);
 
 // Filter options — distinct cuisines & dishes (public)
 router.get("/filters", getFilterOptions);
+
+// Sales analytics for one of my restaurants (owner; ownership checked in controller)
+router.get(
+  "/:restaurantId/analytics",
+  isAuthenticated,
+  validate(restaurantIdParamSchema, "params"),
+  validate(analyticsQuerySchema, "query"),
+  getRestaurantAnalytics
+);
 
 // Get single restaurant (public)
 router.get("/:id", validate(idParamSchema, "params"), getSingleRestaurant);

@@ -36,6 +36,43 @@ export type OrderStatus =
   | "payment_failed"
   | "cancelled";
 
+/**
+ * Money state, tracked independently of the order/fulfilment status.
+ *
+ * Keeping this separate means "paid but cancelled", "refund pending" and
+ * "payment failed" can be reconciled without overloading `status`.
+ */
+export type PaymentStatus =
+  | "unpaid"
+  | "pending"
+  | "paid"
+  | "failed"
+  | "refunded"
+  | "partially_refunded"
+  | "not_required";
+
+export type PaymentEventType =
+  | "payment_initiated"
+  | "payment_succeeded"
+  | "payment_failed"
+  | "checkout_expired"
+  | "cod_order_confirmed"
+  | "cod_collected"
+  | "cancellation"
+  | "refund_requested"
+  | "refund_succeeded"
+  | "refund_failed";
+
+/** Append-only audit trail for payment and refund transitions. */
+export type PaymentEvent = {
+  type: PaymentEventType;
+  status: PaymentStatus;
+  amount?: number;
+  providerId?: string;
+  note?: string;
+  createdAt: Date;
+};
+
 export interface IOrder extends Document {
   user: mongoose.Schema.Types.ObjectId;
   restaurant: mongoose.Schema.Types.ObjectId;
@@ -64,6 +101,11 @@ export interface IOrder extends Document {
   cancelledBy?: "customer" | "restaurant" | "system";
   refundStatus?: "not_applicable" | "pending" | "refunded" | "failed";
   refundId?: string;
+  // Money state is independent from the fulfilment status. Optional for
+  // backward compatibility with orders created before this field existed; the
+  // migration script backfills them from status/refundStatus.
+  paymentStatus?: PaymentStatus;
+  paymentEvents?: PaymentEvent[];
   currentEta?: number; // FIX: added — written by trackingSocket.ts
   currentDistance?: number; // FIX: added — written by trackingSocket.ts
   // Latest known driver position, stored on every accepted update so a
@@ -203,6 +245,71 @@ const orderSchema = new mongoose.Schema<IOrder>(
       },
     },
     refundId: { type: String, trim: true },
+    paymentStatus: {
+      type: String,
+      enum: {
+        values: [
+          "unpaid",
+          "pending",
+          "paid",
+          "failed",
+          "refunded",
+          "partially_refunded",
+          "not_required",
+        ],
+        message: "Payment status {VALUE} is not valid",
+      },
+      default: "unpaid",
+    },
+    // Append-only audit trail. Never edited in place; each transition is a new
+    // entry so the payment/refund history can be reconstructed.
+    paymentEvents: [
+      {
+        _id: false,
+        type: {
+          type: String,
+          required: true,
+          enum: {
+            values: [
+              "payment_initiated",
+              "payment_succeeded",
+              "payment_failed",
+              "checkout_expired",
+              "cod_order_confirmed",
+              "cod_collected",
+              "cancellation",
+              "refund_requested",
+              "refund_succeeded",
+              "refund_failed",
+            ],
+            message: "Payment event type {VALUE} is not valid",
+          },
+        },
+        status: {
+          type: String,
+          required: true,
+          enum: {
+            values: [
+              "unpaid",
+              "pending",
+              "paid",
+              "failed",
+              "refunded",
+              "partially_refunded",
+              "not_required",
+            ],
+            message: "Payment event status {VALUE} is not valid",
+          },
+        },
+        amount: {
+          type: Number,
+          min: [0, "Payment event amount cannot be negative"],
+        },
+        providerId: { type: String, trim: true, maxlength: 200 },
+        note: { type: String, trim: true, maxlength: 300 },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     // FIX: added — these three fields were being written by trackingSocket.ts
     // but never declared in the schema, so Mongoose silently dropped them.
     currentEta: {
@@ -247,6 +354,8 @@ orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ user: 1, status: 1 });
 orderSchema.index({ paymentMethod: 1 });
+// Reconciliation/analytics query: "show me every paid order in this range".
+orderSchema.index({ paymentStatus: 1, createdAt: -1 });
 // Idempotent checkout: one order per (user, idempotencyKey). The partial
 // filter keeps the index valid for every order created before this feature.
 orderSchema.index(

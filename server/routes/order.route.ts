@@ -6,6 +6,7 @@ import {
   getOrderBySessionId,
   getOrderById,
   cancelOrder,
+  getOrderReceipt,
 } from "../controller/order.controller.js";
 import { checkoutRateLimiter } from "../middlewares/rateLimit.js";
 import { validate } from "../middlewares/validate.js";
@@ -37,6 +38,14 @@ router.get(
   isAuthenticated,
   validate(stripeSessionIdParamSchema, "params"),
   getOrderBySessionId
+);
+
+// Get a structured receipt for an order (customer, restaurant owner, or admin)
+router.get(
+  "/:orderId/receipt",
+  isAuthenticated,
+  validate(orderIdParamSchema, "params"),
+  getOrderReceipt
 );
 
 // Get order by ID (protected)

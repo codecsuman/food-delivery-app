@@ -64,7 +64,6 @@ coverage
 /.bug-reports/
 /.project-docs/
 /.project-tracker/
-/.github/
 /DEPLOYMENT.md
 /SECURITY_REPORT.md
 /quick-start.bat
