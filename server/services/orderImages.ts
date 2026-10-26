@@ -14,7 +14,9 @@ type OrderWithItems = {
  * a `404` for every visit.
  *
  * Repoint each item at the menu's current image when that menu still exists.
- * Deleted menus keep their snapshot — the client shows the shared placeholder.
+ * When the menu itself is gone, the snapshot URL points at a deleted Cloudinary
+ * asset, so blank it — the client then renders its inline placeholder and the
+ * browser never requests the dead file (no more console 404).
  */
 export const refreshOrderItemImages = async <T extends OrderWithItems>(
   orders: T[],
@@ -41,9 +43,13 @@ export const refreshOrderItemImages = async <T extends OrderWithItems>(
 
     for (const order of orders) {
       for (const item of order.cartItems ?? []) {
-        const image = item.menuId ? currentImage.get(item.menuId) : undefined;
-        if (image && image !== item.image) {
-          item.image = image;
+        if (!item?.menuId || !Types.ObjectId.isValid(item.menuId)) continue;
+
+        const image = currentImage.get(item.menuId);
+        if (image) {
+          if (image !== item.image) item.image = image;
+        } else if (item.image) {
+          item.image = "";
         }
       }
     }

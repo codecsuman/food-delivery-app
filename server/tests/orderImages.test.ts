@@ -56,13 +56,13 @@ describe("Order item image refresh", () => {
     expect(order.cartItems[0].image).toBe("https://cdn.example.com/new-dish.jpg");
   });
 
-  it("leaves the snapshot alone when the menu no longer exists", async () => {
+  it("blanks the image when the menu no longer exists", async () => {
     const missingMenuId = new mongoose.Types.ObjectId().toString();
     const order = await makeOrder(missingMenuId, "https://cdn.example.com/gone.jpg");
 
     await refreshOrderItemImages([order]);
 
-    expect(order.cartItems[0].image).toBe("https://cdn.example.com/gone.jpg");
+    expect(order.cartItems[0].image).toBe("");
   });
 
   it("does not touch an item that is already current", async () => {
