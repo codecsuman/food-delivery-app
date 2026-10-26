@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import { isValidObjectId } from "../utils/objectId.js";
 import { refundOrderPayment } from "../services/orderRefunds.js";
 import { emitOrderStatus } from "../socketHandlers/orderEvents.js";
+import { refreshOrderItemImages } from "../services/orderImages.js";
 import {
   paymentEvent,
   paymentStatusOnCancellation,
@@ -397,6 +398,10 @@ export const getRestaurantOrder = async (req: Request, res: Response) => {
         .limit(limit),
       Order.countDocuments(filter),
     ]);
+
+    // Repoint stale Cloudinary URLs at the menu's current photo, otherwise the
+    // dashboard shows broken item images (and logs a 404 on every visit).
+    await refreshOrderItemImages(orders);
 
     return res.status(200).json({
       success: true,

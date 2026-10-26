@@ -20,6 +20,7 @@ import {
   paymentStatusAfterRefund,
 } from "../services/orderPayments.js";
 import type { IOrder } from "../models/order.model.js";
+import { refreshOrderItemImages } from "../services/orderImages.js";
 import {
   emitNewOrder,
   emitOrderStatus,
@@ -126,6 +127,8 @@ export const getOrders = async (req: Request, res: Response) => {
       Order.countDocuments({ user: req.id }),
     ]);
 
+    await refreshOrderItemImages(orders);
+
     return res.status(200).json({
       success: true,
       count: orders.length,
@@ -168,6 +171,8 @@ export const getOrderById = async (req: Request, res: Response) => {
     if (!isOrderOwner && !isRestaurantOwner) {
       return res.status(403).json({ success: false, message: "Not authorized" });
     }
+
+    await refreshOrderItemImages([order]);
 
     return res.status(200).json({
       success: true,
@@ -1238,6 +1243,8 @@ export const getOrderBySessionId = async (req: Request, res: Response) => {
     if (!isOrderOwner && !isRestaurantOwner) {
       return res.status(403).json({ success: false, message: "Not authorized" });
     }
+
+    await refreshOrderItemImages([order]);
 
     return res.status(200).json({
       success: true,
