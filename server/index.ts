@@ -223,6 +223,9 @@ app.get("/health", async (_req: Request, res: Response) => {
     // Additive fields for ops dashboards; existing consumers keep working.
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || "1.0.0",
+    // Render exposes the deployed commit, which makes it obvious whether the
+    // live service is actually running the latest `main` build.
+    commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null,
     checks: {
       database: dbStatus,
       transactions: transactions.supported ? "supported" : "fallback",

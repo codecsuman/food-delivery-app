@@ -394,7 +394,7 @@ VITE_SOCKET_URL=http://localhost:8001
 curl -s https://food-delivery-backend-3dwa.onrender.com/health
 ```
 
-A current build returns `version`, `database`, `transactions`, and `checks` alongside `status`. If the response is only `{"status":"OK","message":"Server is running"}`, Render is still serving an older build — click **Manual Deploy → Deploy latest commit** or turn on **Auto-Deploy** for `main`.
+A current build returns `version`, `commit`, `database`, `transactions`, and `checks` alongside `status`. If the response is only `{"status":"OK","message":"Server is running"}`, Render is still serving an older build — click **Manual Deploy → Deploy latest commit** or turn on **Auto-Deploy** for `main`. The `commit` value lets you compare the live deployment with `git rev-parse --short main`.
 
 **Automated backend deploy from GitHub (optional):**
 
@@ -628,7 +628,7 @@ If the error persists:
 The frontend can be deployed ahead of the backend. An older backend silently ignores fields that are not in its Mongoose schema (strict mode), so the request returns `200` even though the values were never written. This affected `alternateContact`, `pincode`, `state`, `city`, `country`, and address changes when Render was still serving the September build.
 
 1. Check the live backend build with `curl -s https://food-delivery-backend-3dwa.onrender.com/health`.
-2. If `version`/`checks` are missing, redeploy Render from the latest `main` commit (or enable **Auto-Deploy**).
+2. If `version`/`commit`/`checks` are missing, redeploy Render from the latest `main` commit (or enable **Auto-Deploy**).
 3. Refresh the frontend, update the profile/restaurant again, then reload. The values should now come back from MongoDB.
 
 The client now compares the submitted values with the API response and shows an explicit **"The server did not save: …"** error instead of a false success toast when a deployed backend is out of date. No data migration is needed: the fields already exist in the current schemas and are written by the current controllers.
