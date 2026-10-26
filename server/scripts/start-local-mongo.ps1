@@ -44,21 +44,54 @@ function Test-Port {
 }
 
 function Invoke-MongoShell {
-  param([string]$Expression)
-  $uri = "mongodb://127.0.0.1:$port/admin?directConnection=true"
-  return (& mongosh $uri --quiet --eval $Expression 2>$null)
+  param(
+    [Parameter(Mandatory = $true)][string]$Expression,
+    [switch]$AllowFailure
+  )
+
+  $uri = "mongodb://127.0.0.1:$port/admin?directConnection=true&serverSelectionTimeoutMS=3000"
+
+  # Windows PowerShell 5.1 converts ANY native stderr output into a terminating
+  # NativeCommandError while $ErrorActionPreference = "Stop" - even when stderr
+  # is redirected to $null. mongosh writes harmless warnings/notices to stderr
+  # (for example update notices or transient connection warnings), which made
+  # this script fail at the mongosh call. Relax the preference for the native
+  # call only, capture stderr separately, and handle the exit code ourselves.
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+
+  $stderrFile = [System.IO.Path]::GetTempFileName()
+  try {
+    $output = & $mongoshExe $uri --quiet --norc --eval $Expression 2>$stderrFile
+    $exitCode = $LASTEXITCODE
+    $stderr = Get-Content -Path $stderrFile -Raw -ErrorAction SilentlyContinue
+  } finally {
+    $ErrorActionPreference = $previousPreference
+    Remove-Item -Path $stderrFile -Force -ErrorAction SilentlyContinue
+  }
+
+  $stdoutText = if ($null -eq $output) { "" } else { (($output | Out-String).Trim()) }
+  $stderrText = if ($null -eq $stderr) { "" } else { $stderr.Trim() }
+
+  if ($exitCode -ne 0 -and -not $AllowFailure) {
+    $details = if ($stderrText) { $stderrText } else { $stdoutText }
+    throw "mongosh failed (exit code $exitCode). $details"
+  }
+
+  return $stdoutText
 }
 
-$mongosh = Get-Command mongosh -ErrorAction SilentlyContinue
-if (-not $mongosh) {
-  Write-Error "mongosh was not found. Install MongoDB Shell or add it to PATH."
+$mongoshCommand = Get-Command mongosh -ErrorAction SilentlyContinue
+if (-not $mongoshCommand) {
+  Write-Host "mongosh was not found. Install MongoDB Shell or add it to PATH." -ForegroundColor Red
   exit 1
 }
+$mongoshExe = $mongoshCommand.Source
 
 if (-not (Test-Port $port)) {
   $mongod = Find-Mongod
   if (-not $mongod) {
-    Write-Error "mongod.exe was not found. Install MongoDB Server or set MONGOD_BINARY."
+    Write-Host "mongod.exe was not found. Install MongoDB Server or set MONGOD_BINARY." -ForegroundColor Red
     exit 1
   }
 
@@ -85,12 +118,29 @@ if (-not (Test-Port $port)) {
   }
 
   if (-not $ready) {
-    Write-Error "MongoDB did not start on port $port. See $logPath"
+    Write-Host "MongoDB did not start on port $port. See $logPath" -ForegroundColor Red
     exit 1
   }
 }
 
-$setName = (Invoke-MongoShell "try { const h = db.hello(); print(h.setName || '') } catch (e) { print('') }").Trim()
+# An open TCP port does not guarantee that the server accepts queries yet.
+# Retry a tiny ping so the first real command cannot fail with "connection refused".
+$mongoReady = $false
+for ($i = 0; $i -lt 20; $i++) {
+  $ping = Invoke-MongoShell "print('ready')" -AllowFailure
+  if ($ping -eq "ready") {
+    $mongoReady = $true
+    break
+  }
+  Start-Sleep -Milliseconds 500
+}
+
+if (-not $mongoReady) {
+  Write-Host "MongoDB is listening on port $port but mongosh cannot connect. See $logPath" -ForegroundColor Red
+  exit 1
+}
+
+$setName = ([string](Invoke-MongoShell "try { const h = db.hello(); print(h.setName || '') } catch (e) { print('') }")).Trim()
 if ($setName -ne $replicaSet) {
   Write-Host "Initializing replica set '$replicaSet'..."
   Invoke-MongoShell "try { rs.status() } catch (e) { rs.initiate({_id: '$replicaSet', members: [{_id: 0, host: '127.0.0.1:$port'}]}) }" | Out-Null
@@ -98,7 +148,7 @@ if ($setName -ne $replicaSet) {
 
 $primary = $false
 for ($i = 0; $i -lt 30; $i++) {
-  $state = (Invoke-MongoShell "try { const h = db.hello(); print(h.isWritablePrimary ? 'primary' : '') } catch (e) { print('') }").Trim()
+  $state = ([string](Invoke-MongoShell "try { const h = db.hello(); print(h.isWritablePrimary ? 'primary' : '') } catch (e) { print('') }")).Trim()
   if ($state -eq "primary") {
     $primary = $true
     break
@@ -107,7 +157,7 @@ for ($i = 0; $i -lt 30; $i++) {
 }
 
 if (-not $primary) {
-  Write-Error "MongoDB is running on port $port but did not become primary. See $logPath"
+  Write-Host "MongoDB is running on port $port but did not become primary. See $logPath" -ForegroundColor Red
   exit 1
 }
 
