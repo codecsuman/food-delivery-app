@@ -382,7 +382,7 @@ VITE_SOCKET_URL=http://localhost:8001
 
 **Backend → Render**
 - Build Command: `npm install && npm run build`
-- Start Command: `npm start`
+- Start Command: `npm start` — this runs the already-compiled `dist/index.js`; it does **not** re-run `tsc`. On Render's free 0.1-CPU instance a second compile inside the start command can exceed the port-scan grace period and exit with status `134`.
 - Enable **Auto-Deploy** for `main` (or click **Manual Deploy → Deploy latest commit** after every push) — otherwise Render keeps serving the last successful build
 - Set every variable from the `.env` template above directly in Render's **Environment** tab — including `NODE_ENV=production` and `FRONTEND_URL` set to your exact Vercel URL (no trailing slash)
 - Use a **MongoDB Atlas** `MONGO_URI` (or another replica set), not a standalone database, so checkout transactions remain atomic
@@ -395,6 +395,8 @@ curl -s https://food-delivery-backend-3dwa.onrender.com/health
 ```
 
 A current build returns `version`, `commit`, `database`, `transactions`, and `checks` alongside `status`. If the response is only `{"status":"OK","message":"Server is running"}`, Render is still serving an older build — click **Manual Deploy → Deploy latest commit** or turn on **Auto-Deploy** for `main`. The `commit` value lets you compare the live deployment with `git rev-parse --short main`.
+
+> If the Render log shows `No open ports detected` followed by `Exited with status 134` right after `> tsc`, the service is spending its port-detection window recompiling. The build command already runs `tsc`; `npm start` must only run `node dist/index.js`. Do not put `npm run build` back into the start command.
 
 **Automated backend deploy from GitHub (optional):**
 

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { logger } from "../utils/logger.js";
 import {
   logTransactionSupport,
   resetTransactionSupportCache,
@@ -46,6 +47,7 @@ const connectDB = async () => {
   } catch (error) {
     // MongoDB Connection Failed
     if (process.env.NODE_ENV !== "test") {
+      logger.error({ err: error }, "MongoDB connection failed");
       process.exit(1);
     }
   }
