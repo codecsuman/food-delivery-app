@@ -83,6 +83,7 @@ export const useRestaurantStore = create<RestaurantState>()(
       singleRestaurant: null,
       singleRestaurantError: null,
       restaurantOrder: [],
+    restaurantOrderError: null,
       filterOptions: { cuisines: [], dishes: [] },
 
       setRestaurant: (restaurant) => {
@@ -383,13 +384,28 @@ export const useRestaurantStore = create<RestaurantState>()(
             `${API_END_POINT}/order?t=${Date.now()}`,
           );
           if (response.data.success) {
-            set({ restaurantOrder: response.data.orders || [] });
+            set({
+              restaurantOrder: response.data.orders || [],
+              restaurantOrderError: null,
+            });
           }
         } catch (error: any) {
-          if (error?.response?.status === 404) {
-            set({ restaurantOrder: [] });
-          } else if (!options?.silent) {
-            toast.error(getErrorMessage(error));
+          const status = error?.response?.status;
+          // A 404 means "no restaurant linked to this account", which is a
+          // different situation from "no orders yet". Surfacing it stops the
+          // dashboard from quietly claiming the store has never sold anything.
+          const message =
+            status === 404
+              ? "No restaurant is linked to this account yet. Create your restaurant to start receiving orders."
+              : getErrorMessage(error);
+
+          set({
+            restaurantOrderError: message,
+            ...(status === 404 ? { restaurantOrder: [] } : {}),
+          });
+
+          if (!options?.silent) {
+            toast.error(message);
           }
         } finally {
           set({ loading: false });

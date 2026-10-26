@@ -1,6 +1,7 @@
 import { Label } from "@/components/ui/label";
 import { useRestaurantStore } from "@/store/useRestaurantStore";
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import { SOCKET_CONNECTION_OPTIONS, SOCKET_URL } from "@/lib/api";
 import { getImageUrl, handleImageError } from "@/lib/placeholder";
@@ -16,11 +17,17 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 
 const Orders = () => {
-  const { restaurantOrder, getRestaurantOrders, updateRestaurantOrder, loading } =
-    useRestaurantStore();
+  const {
+    restaurantOrder,
+    restaurantOrderError,
+    getRestaurantOrders,
+    updateRestaurantOrder,
+    loading,
+  } = useRestaurantStore();
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [isLive, setIsLive] = useState(false);
   const socketRef = useRef<Socket | null>(null);
@@ -143,6 +150,14 @@ const Orders = () => {
     return () => clearInterval(interval);
   }, [getRestaurantOrders]);
 
+  // A tab that was in the background missed both polling and any socket
+  // events, so refresh as soon as the owner comes back to it.
+  useEffect(() => {
+    const onFocus = () => getRestaurantOrders({ silent: true });
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [getRestaurantOrders]);
+
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
@@ -233,8 +248,40 @@ const Orders = () => {
           </div>
         )}
 
+        {/* Error State — tells the owner why the list is empty instead of
+            pretending there are simply no orders yet. */}
+        {!loading && restaurantOrderError && (
+          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-semibold">Could not load your orders</p>
+                <p className="mt-0.5">{restaurantOrderError}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 pl-8">
+              <button
+                onClick={() => getRestaurantOrders()}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+                Try again
+              </button>
+              {restaurantOrderError.startsWith("No restaurant") && (
+                <Link
+                  to="/admin/restaurant"
+                  className="font-semibold text-red-700 underline underline-offset-2 hover:text-red-800 dark:text-red-300"
+                >
+                  Create restaurant
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Empty State */}
-        {!loading && restaurantOrder.length === 0 && (
+        {!loading && !restaurantOrderError && restaurantOrder.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center py-24 px-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/30">
             <div className="h-14 w-14 rounded-full bg-orange-100 dark:bg-orange-500/10 flex items-center justify-center mb-4">
               <PackageOpen className="h-7 w-7 text-orange-500" />

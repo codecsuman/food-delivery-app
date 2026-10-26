@@ -66,6 +66,8 @@ export type RestaurantState = {
   /** Set when a restaurant detail request fails, so the UI can stop showing a skeleton. */
   singleRestaurantError: string | null;
   restaurantOrder: Orders[];
+  /** Human-readable reason the owner order fetch failed (null when OK). */
+  restaurantOrderError: string | null;
   filterOptions: FilterOptionsData;
   createRestaurant: (formData: FormData) => Promise<void>;
   getRestaurant: () => Promise<void>;
