@@ -10,11 +10,13 @@ import { Link } from "react-router-dom";
 import AddressPicker from "./AddressPicker";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { getImageUrl, handleImageError } from "@/lib/placeholder";
+import { lookupPincode } from "@/lib/pincode";
 
 const Profile = () => {
   const { user, updateProfile, loading } = useUserStore();
   const { restaurants, getUserRestaurants, deleteRestaurant, loading: restaurantLoading } = useRestaurantStore();
   const imageRef = useRef<HTMLInputElement | null>(null);
+  const pincodeLookupId = useRef(0);
   const [showSuccess, setShowSuccess] = useState(false);
   const [useMapPicker, setUseMapPicker] = useState(false);
 
@@ -304,24 +306,23 @@ const Profile = () => {
                       value={profileData.pincode} 
                       onChange={async (e) => {
                         const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                        const requestId = ++pincodeLookupId.current;
                         setProfileData((prev) => ({ ...prev, pincode: value, latitude: null, longitude: null }));
                         
-                        // Auto-fetch city/state from pincode when 6 digits entered
+                        // Auto-fetch city/state from pincode when 6 digits
+                        // entered. The shared helper handles older backends
+                        // and never throws.
                         if (value.length === 6) {
-                          try {
-                            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-                            const res = await fetch(`${API_BASE_URL}/map/pincode/${value}`);
-                            const data = await res.json();
-                            if (data.success) {
-                              setProfileData((prev) => ({
-                                ...prev,
-                                city: data.city || "",
-                                state: data.state || "",
-                                country: data.country || "",
-                              }));
-                            }
-                          } catch (err) {
-                            console.warn("Pincode lookup failed:", err);
+                          const data = await lookupPincode(value);
+                          if (requestId !== pincodeLookupId.current) return;
+
+                          if (data?.success) {
+                            setProfileData((prev) => ({
+                              ...prev,
+                              city: data.city || "",
+                              state: data.state || "",
+                              country: data.country || "",
+                            }));
                           }
                         }
                       }} 

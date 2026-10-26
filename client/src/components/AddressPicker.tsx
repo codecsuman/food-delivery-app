@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Loader2, MapPin, Check, LocateFixed } from "lucide-react";
+import { lookupPincode } from "@/lib/pincode";
 
 // Fix Leaflet default marker icon
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -316,9 +317,8 @@ const AddressPicker = ({
     if (value.length === 6) {
       setPincodeLoading(true);
       try {
-        const res = await fetch(`${API_BASE_URL}/map/pincode/${value}`);
-        const data = await res.json();
-        if (requestId === pincodeRequestId.current && data.success) {
+        const data = await lookupPincode(value);
+        if (requestId === pincodeRequestId.current && data?.success) {
           setPincodeData({
             city: data.city,
             district: data.district,
@@ -327,10 +327,9 @@ const AddressPicker = ({
             postOffices: data.postOffices,
           });
         }
-      } catch (err) {
-        console.warn("Pincode lookup failed:", err);
+      } finally {
+        if (requestId === pincodeRequestId.current) setPincodeLoading(false);
       }
-      if (requestId === pincodeRequestId.current) setPincodeLoading(false);
     } else {
       setPincodeLoading(false);
     }

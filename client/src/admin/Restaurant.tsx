@@ -12,6 +12,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
+import { lookupPincode } from "@/lib/pincode";
 
 let DefaultIcon = L.icon({
   iconUrl: markerIcon,
@@ -44,6 +45,7 @@ const Restaurant = () => {
   const [previewImage, setPreviewImage] = useState<string>("");
   const [fetchingLocation, setFetchingLocation] = useState(false);
   const hasFetched = useRef(false);
+  const pincodeLookupId = useRef(0);
 
   // Map + draggable marker refs, replacing raw lat/lng number inputs
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -419,24 +421,24 @@ const Restaurant = () => {
                 value={input.pincode}
                 onChange={async (e) => {
                   const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  const requestId = ++pincodeLookupId.current;
                   setInput((prev) => ({ ...prev, pincode: value }));
-                  
-                  // Auto-fetch city/state from pincode when 6 digits entered
+
+                  // Auto-fetch city/state from pincode when 6 digits entered.
+                  // The shared helper hides backend-version differences and
+                  // never throws, so a failed optional lookup cannot block the
+                  // form.
                   if (value.length === 6) {
-                    try {
-                      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-                      const res = await fetch(`${API_BASE_URL}/map/pincode/${value}`);
-                      const data = await res.json();
-                      if (data.success) {
-                        setInput((prev) => ({
-                          ...prev,
-                          city: data.city || "",
-                          state: data.state || "",
-                          country: data.country || "",
-                        }));
-                      }
-                    } catch (err) {
-                      console.warn("Pincode lookup failed:", err);
+                    const data = await lookupPincode(value);
+                    if (requestId !== pincodeLookupId.current) return;
+
+                    if (data?.success) {
+                      setInput((prev) => ({
+                        ...prev,
+                        city: data.city || "",
+                        state: data.state || "",
+                        country: data.country || "",
+                      }));
                     }
                   }
                 }}

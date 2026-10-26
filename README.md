@@ -377,6 +377,7 @@ VITE_SOCKET_URL=http://localhost:8001
 **Backend → Render**
 - Build Command: `npm install && npm run build`
 - Start Command: `npm start`
+- Enable **Auto-Deploy** for `main` (or click **Manual Deploy → Deploy latest commit** after every push) — otherwise Render keeps serving the last successful build
 - Set every variable from the `.env` template above directly in Render's **Environment** tab — including `NODE_ENV=production` and `FRONTEND_URL` set to your exact Vercel URL (no trailing slash)
 - Use a **MongoDB Atlas** `MONGO_URI` (or another replica set), not a standalone database, so checkout transactions remain atomic
 - Confirm the service is served over `https://` (Render does this by default) — cookies marked `secure: true` are dropped entirely over plain `http://`
@@ -668,6 +669,14 @@ Confirm the order's restaurant document actually has `location.coordinates` set 
 1. Confirm the order is in the `On the Way` status — position broadcasts are scoped to that stage.
 2. Check that the socket connection is authenticated for that specific `orderId` (open two browser tabs and confirm both join the same room).
 3. If deployed on Render's free tier, the backend may be asleep — the first request after inactivity can take 30–60 seconds to wake it up.
+</details>
+
+<details>
+<summary><b>Browser console shows a 404 for <code>/api/v1/map/pincode/...</code></b></summary>
+
+The frontend now probes the backend once and falls back to the same public pincode API when the deployed backend predates the cached `/map/pincode` route, so auto-fill keeps working without repeated 404s. A 404 still means the Render service is serving an old commit — redeploy the latest `main` (or enable Auto-Deploy). Redeploying also enables the newer payment, receipt, issue, and owner-analytics APIs.
+
+The `Permissions-Policy ... Unrecognized feature` messages are Chrome 156+ deprecation warnings for retired ad features. They are not sent by this app's Vercel or Render responses and are harmless.
 </details>
 
 <br/>
