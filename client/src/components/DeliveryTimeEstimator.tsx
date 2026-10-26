@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Timer, MapPin, Navigation } from "lucide-react";
-
-// FIX: full backend URL instead of relative path — required for Vercel deploys
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
+import { API_BASE_URL } from "@/lib/api";
 
 interface DeliveryTimeEstimatorProps {
   restaurantId: string;

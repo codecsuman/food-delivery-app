@@ -6,6 +6,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Loader2, MapPin, Check, LocateFixed } from "lucide-react";
 import { lookupPincode } from "@/lib/pincode";
+import { API_BASE_URL } from "@/lib/api";
 
 // Fix Leaflet default marker icon
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -19,9 +20,6 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// FIX: use the full backend URL instead of a relative path, so this works on
-// Vercel (which has no dev-server proxy) as well as locally.
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || "";
 const DEFAULT_CENTER: [number, number] = [22.5726, 88.3639]; // [lat, lng]
 
 const isValidCoords = (coords?: readonly number[] | null): coords is [number, number] => {

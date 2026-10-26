@@ -14,8 +14,7 @@ import { useOrderStore } from "@/store/useOrderStore";
 import { Loader2, MapPin, CreditCard, Banknote, Navigation, Phone, Store } from "lucide-react";
 import AddressPicker from "./AddressPicker";
 import DeliveryTimeEstimator, { DeliveryQuote } from "./DeliveryTimeEstimator";
-
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || "";
+import { API_BASE_URL } from "@/lib/api";
 
 // A saved map selection is reused for convenience, but never forever: stale
 // coordinates are exactly what made older deliveries show up at an old place.

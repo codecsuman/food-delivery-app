@@ -9,6 +9,15 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    // Matches the production same-origin layout, so relative `/api/v1`
+    // requests work even when no VITE_API_BASE_URL is configured.
+    proxy: {
+      "/api": { target: "http://localhost:8001", changeOrigin: true },
+      "/health": { target: "http://localhost:8001", changeOrigin: true },
+      "/socket.io": { target: "http://localhost:8001", ws: true, changeOrigin: true },
+    },
+  },
   build: {
     rollupOptions: {
       output: {

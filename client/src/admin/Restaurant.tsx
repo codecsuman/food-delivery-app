@@ -13,6 +13,7 @@ import "leaflet/dist/leaflet.css";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { lookupPincode } from "@/lib/pincode";
+import { API_BASE_URL } from "@/lib/api";
 
 let DefaultIcon = L.icon({
   iconUrl: markerIcon,
@@ -101,7 +102,6 @@ const Restaurant = () => {
   // Reverse geocode to auto-fill pincode, city, country from coordinates
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
       const res = await fetch(`${API_BASE_URL}/map/reverse-geocode`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

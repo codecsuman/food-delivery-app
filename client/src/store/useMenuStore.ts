@@ -2,8 +2,9 @@ import axios from "axios";
 import { toast } from "sonner";
 import { create } from "zustand";
 import { MenuItem } from "@/types/restaurantType";
+import { API_BASE_URL } from "@/lib/api";
 
-const API_END_POINT = `${import.meta.env.VITE_API_BASE_URL}/menu`;
+const API_END_POINT = `${API_BASE_URL}/menu`;
 axios.defaults.withCredentials = true;
 
 const getErrorMessage = (error: any): string => {

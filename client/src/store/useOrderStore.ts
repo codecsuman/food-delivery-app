@@ -3,8 +3,9 @@ import { useCartStore } from "@/store/useCartStore";
 import axios from "axios";
 import { toast } from "sonner";
 import { create } from "zustand";
+import { API_BASE_URL } from "@/lib/api";
 
-const API_END_POINT: string = `${import.meta.env.VITE_API_BASE_URL}/order`;
+const API_END_POINT: string = `${API_BASE_URL}/order`;
 axios.defaults.withCredentials = true;
 
 const getErrorMessage = (error: any): string => {

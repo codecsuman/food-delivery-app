@@ -13,8 +13,9 @@
  * involved.
  */
 
+import { API_BASE_URL } from "@/lib/api";
+
 const PINCODE_API_BASE = "https://api.pincodeapi.in/api/v1";
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || "";
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export interface PincodeOffice {

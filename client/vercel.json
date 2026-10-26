@@ -1,11 +1,54 @@
 {
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://food-delivery-backend-3dwa.onrender.com/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://food-delivery-backend-3dwa.onrender.com/health"
+    },
+    {
+      "source": "/socket.io",
+      "destination": "https://food-delivery-backend-3dwa.onrender.com/socket.io"
+    },
+    {
+      "source": "/socket.io/:path*",
+      "destination": "https://food-delivery-backend-3dwa.onrender.com/socket.io/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
+    {
+      "source": "/api/:path*",
+      "headers": [
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "source": "/health",
+      "headers": [
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "source": "/socket.io/:path*",
+      "headers": [
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "0"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [

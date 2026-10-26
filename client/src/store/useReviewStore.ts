@@ -2,8 +2,9 @@ import { create } from "zustand";
 import axios from "axios";
 import { toast } from "sonner";
 import { isValidObjectId } from "@/lib/validation";
+import { API_BASE_URL } from "@/lib/api";
 
-const API_END_POINT = `${import.meta.env.VITE_API_BASE_URL}/review`;
+const API_END_POINT = `${API_BASE_URL}/review`;
 axios.defaults.withCredentials = true;
 
 // Prevent a slow response for restaurant A from overwriting the reviews of

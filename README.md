@@ -180,8 +180,8 @@ This update is a hardening pass — durable payment/webhook state, CSRF hardenin
 | **Failed payments** | Never updated the order | Stripe webhook correctly matches failed payments back to the order via `PaymentIntent` metadata |
 | **Restaurant location** | Not collected — defaulted to `[0, 0]` | Owners set a real location by **dragging a pin on a map** or one-tap geolocation |
 | **Live order tracking** | Basic list only | **Real-time map tracking** via Socket.IO — live driver position, ETA, and route, authenticated per order |
-| **Cross-origin deployment** | Relative API paths (broke on Vercel) | All API calls use a full backend URL from environment variables |
-| **Cross-site auth cookies** | Cookie dropped silently on Vercel ↔ Render | Cookie correctly flagged `Secure` + `SameSite: none` in production, CORS supports multiple explicit origins |
+| **Cross-origin deployment** | Direct browser calls to Render could be blocked by ad blockers/privacy extensions | Production uses same-origin `/api/v1`; Vercel rewrites proxy to Render so the browser never calls `onrender.com` directly |
+| **Cross-site auth cookies** | Cookie dropped silently on Vercel ↔ Render | Same-origin proxy keeps the cookie first-party; the backend still supports `Secure` + `SameSite: none` for direct cross-origin deployments |
 | **Email verification (OTP)** | Present, browser-inconsistent | Removed entirely — signup verifies the account immediately |
 | **Cancel order** | ❌ Not possible | ✅ Full flow with automatic Stripe refund |
 | **Order tracking (status)** | Basic list | Animated progress bar + Active/Past tabs |
@@ -199,7 +199,7 @@ This update is a hardening pass — durable payment/webhook state, CSRF hardenin
 - **Order Cancellation** — `POST /api/v1/order/:orderId/cancel` validates that the requester owns the order, blocks cancellation once an order is `delivered`, `cancelled`, or `payment_failed`, and automatically issues a Stripe refund for orders that were paid online.
 - **Order Details by Session ID** — `getOrderBySessionId` retrieves the correct order right after a Stripe redirect, using the `session_id` query param.
 - **Stripe Webhook** — a dedicated webhook controller listens for `checkout.session.completed` (confirms the order and stores the `paymentIntentId`) and `payment_intent.payment_failed` (marks the order as `payment_failed`), with signature verification via `WEBHOOK_ENDPOINT_SECRET`.
-- **Cross-origin auth fixed** — cookies are now correctly issued with `secure: true` and `sameSite: "none"` when `NODE_ENV=production`, which is required for the frontend (Vercel) and backend (Render) living on different domains. CORS now accepts a comma-separated list of allowed origins instead of a single hardcoded one.
+- **Cross-origin auth fixed** — the Vercel build calls the API through a same-origin rewrite (`/api/v1`), so the session cookie is first-party and cannot be blocked by a privacy extension filtering `onrender.com`. For direct cross-origin deployments the backend still issues `secure: true` + `sameSite: "none"` cookies and CORS accepts a comma-separated origin list.
 - **Email verification removed** — the OTP/email-verification flow was removed as a feature; accounts are active immediately on signup. All related routes, store methods, and UI have been stripped out.
 
 <br/>
@@ -363,7 +363,9 @@ VITE_API_BASE_URL=http://localhost:8001/api/v1
 VITE_SOCKET_URL=http://localhost:8001
 ```
 
-> 💡 In production, point these at your deployed backend's full URL (e.g. `https://your-backend.onrender.com`). Never use relative paths (`/api/v1/...`) — they only work locally thanks to Vite's dev proxy and will 404 once the frontend and backend are on separate domains (e.g. Vercel + Render).
+> 💡 `VITE_API_BASE_URL` is used by the **development** server. The production build deliberately ignores it and calls `/api/v1` on the page's own origin. `client/vercel.json` rewrites `/api/*`, `/health`, and `/socket.io/*` to the Render backend, which prevents ad blockers/privacy extensions from blocking `onrender.com` and keeps the auth cookie first-party.
+>
+> If your backend URL changes, update the three rewrite destinations in `client/vercel.json`. The Vite dev server proxies the same paths to `http://localhost:8001` when `VITE_API_BASE_URL` is omitted.
 
 <br/>
 
@@ -374,7 +376,9 @@ VITE_SOCKET_URL=http://localhost:8001
 **Frontend → Vercel**
 - Build Command: `npm run build`
 - Output Directory: `dist`
-- Set `VITE_API_BASE_URL` and `VITE_SOCKET_URL` to your live backend URL in Vercel's Environment Variables
+- `client/vercel.json` proxies `/api/*`, `/health`, and `/socket.io/*` to the Render service. Keep those destinations in sync if the backend hostname changes.
+- `VITE_API_BASE_URL` is no longer required for production. The client uses same-origin `/api/v1` so privacy extensions cannot block the Render hostname and the auth cookie stays first-party.
+- `FRONTEND_URL` on Render must still contain the Vercel origin because the backend's origin guard checks the `Origin` header forwarded by the proxy.
 
 **Backend → Render**
 - Build Command: `npm install && npm run build`
@@ -606,6 +610,19 @@ This is a cross-origin cookie issue. If your frontend and backend are on **diffe
 </details>
 
 <details>
+<summary><b>Browser shows <code>net::ERR_BLOCKED_BY_CLIENT</code> for <code>onrender.com</code></b></summary>
+
+A browser extension (ad blocker, Brave Shields, privacy filter, or corporate DNS policy) is blocking the Render hostname. This is client-side — the backend may be perfectly healthy.
+
+The production build now calls same-origin `/api/v1`, `/health`, and `/socket.io` paths instead of `https://food-delivery-backend-3dwa.onrender.com` directly. Vercel rewrites those paths to Render, so the browser only talks to the Vercel domain. Redeploy the Vercel frontend after changing `client/vercel.json`.
+
+If the error persists:
+1. Confirm the browser request URL starts with your Vercel domain, not `onrender.com`.
+2. Disable the blocker for the Vercel site temporarily to confirm the diagnosis.
+3. Check the `/health` request in DevTools → Network; a successful proxy returns the Render JSON from the Vercel origin.
+</details>
+
+<details>
 <summary><b>Profile or restaurant fields appear saved but disappear after a refresh</b></summary>
 
 The frontend can be deployed ahead of the backend. An older backend silently ignores fields that are not in its Mongoose schema (strict mode), so the request returns `200` even though the values were never written. This affected `alternateContact`, `pincode`, `state`, `city`, `country`, and address changes when Render was still serving the September build.
@@ -690,7 +707,7 @@ Copy the `whsec_...` value it prints into `WEBHOOK_ENDPOINT_SECRET` in your `.en
 <details>
 <summary><b>Live tracking map shows the wrong location / falls back to a default</b></summary>
 
-Confirm the order's restaurant document actually has `location.coordinates` set (create/update the restaurant via the map picker if it doesn't), and that your `getOrders` controller is populating the restaurant field so the frontend receives its coordinates. Also check the browser console for a Socket.IO connection error — the client needs `VITE_SOCKET_URL` set to the deployed backend URL, not `localhost`, in production.
+Confirm the order's restaurant document actually has `location.coordinates` set (create/update the restaurant via the map picker if it doesn't), and that your `getOrders` controller is populating the restaurant field so the frontend receives its coordinates. In production the Socket.IO client connects to the same origin and Vercel proxies `/socket.io/*` to Render; check the browser console for a connection error and confirm the rewrite in `client/vercel.json` points at the live backend. `VITE_SOCKET_URL` is only needed for local development.
 </details>
 
 <details>

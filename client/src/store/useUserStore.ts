@@ -3,9 +3,10 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import axios from "axios";
 import { LoginInputState, SignupInputState } from "@/schema/userSchema";
 import { findUnpersistedFields } from "@/lib/persistence";
+import { API_BASE_URL } from "@/lib/api";
 import { toast } from "sonner";
 
-const API_END_POINT = `${import.meta.env.VITE_API_BASE_URL}/user`;
+const API_END_POINT = `${API_BASE_URL}/user`;
 axios.defaults.withCredentials = true;
 
 type User = {

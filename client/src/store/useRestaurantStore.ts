@@ -6,8 +6,9 @@ import axios from "axios";
 import { toast } from "sonner";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { API_BASE_URL } from "@/lib/api";
 
-const API_END_POINT = `${import.meta.env.VITE_API_BASE_URL}/restaurant`;
+const API_END_POINT = `${API_BASE_URL}/restaurant`;
 axios.defaults.withCredentials = true;
 
 // Guards against out-of-order responses when the user opens restaurant A and

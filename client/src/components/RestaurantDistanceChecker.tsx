@@ -3,9 +3,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Navigation, CheckCircle, XCircle, Loader2 } from "lucide-react";
-
-// FIX: full backend URL instead of relative path — required for Vercel deploys
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
+import { API_BASE_URL } from "@/lib/api";
 
 interface RestaurantDistanceCheckerProps {
   restaurantId: string;

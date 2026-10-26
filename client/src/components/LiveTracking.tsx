@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { io, Socket } from "socket.io-client";
+import { API_BASE_URL, SOCKET_URL } from "@/lib/api";
 import { Truck, Clock, MapPin, Navigation, Package, ChefHat, CheckCircle2, CircleDot, AlertCircle, Phone, Store } from "lucide-react";
 
 // Fix Leaflet default marker icon
@@ -15,25 +16,6 @@ let DefaultIcon = L.icon({
   iconAnchor: [12, 41],
 });
 L.Marker.prototype.options.icon = DefaultIcon;
-
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL || "";
-
-// FIX: never fall back to localhost in a production build. When only
-// VITE_API_BASE_URL is configured (the common Vercel/Render setup), derive the
-// Socket.IO origin from it. Falling back to `window.location.origin` keeps
-// same-origin deployments working too.
-const SOCKET_URL: string = (() => {
-  const configured = import.meta.env.VITE_SOCKET_URL as string | undefined;
-  if (configured) return configured;
-  if (API_BASE_URL) {
-    try {
-      return new URL(API_BASE_URL, window.location.origin).origin;
-    } catch {
-      // ignore malformed URL and use the page origin below
-    }
-  }
-  return window.location.origin;
-})();
 
 const isValidCoords = (coords?: readonly number[] | null): coords is [number, number] => {
   if (!coords || coords.length < 2) return false;

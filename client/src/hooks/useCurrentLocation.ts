@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { API_BASE_URL } from "@/lib/api";
 
 interface LocationData {
   address: string;
@@ -34,8 +35,6 @@ interface UseCurrentLocationReturn {
 export const useCurrentLocation = (): UseCurrentLocationReturn => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const fetchLocation = useCallback(async (): Promise<LocationData | null> => {
     if (!navigator.geolocation) {
